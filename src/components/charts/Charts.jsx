@@ -7,6 +7,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { SERIES } from './chartTheme'
+import AnimatedValue from '../ui/AnimatedValue'
 import { formatCompactCurrency, formatCurrency, formatNumber } from '../../utils/formatCurrency'
 
 const AXIS = { fontSize: 11, fill: '#64748b' }
@@ -69,8 +70,8 @@ export function RevenueExpenseChart({ data, height = 300, xKey = 'short' }) {
           <XAxis dataKey={xKey} tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} interval="preserveStartEnd" minTickGap={18} />
           <YAxis tick={AXIS} tickLine={false} axisLine={false} width={76} tickFormatter={(v) => formatCompactCurrency(v)} />
           <Tooltip content={<TooltipCard money labelKey="label" />} cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }} />
-          <Line type="monotone" dataKey="revenue" name="Revenue" stroke={SERIES.revenue.color} strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 4.5, strokeWidth: 2, stroke: '#fff' }} label={endLabel('Revenue', SERIES.revenue.color, n)} />
-          <Line type="monotone" dataKey="expenses" name="Expenses" stroke={SERIES.expenses.color} strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 4.5, strokeWidth: 2, stroke: '#fff' }} label={endLabel('Expenses', SERIES.expenses.color, n)} />
+          <Line type="monotone" dataKey="revenue" name="Revenue" stroke={SERIES.revenue.color} strokeWidth={2} dot={false} animationDuration={900} animationEasing="ease-out" activeDot={{ r: 4.5, strokeWidth: 2, stroke: '#fff' }} label={endLabel('Revenue', SERIES.revenue.color, n)} />
+          <Line type="monotone" dataKey="expenses" name="Expenses" stroke={SERIES.expenses.color} strokeWidth={2} dot={false} animationDuration={900} animationEasing="ease-out" activeDot={{ r: 4.5, strokeWidth: 2, stroke: '#fff' }} label={endLabel('Expenses', SERIES.expenses.color, n)} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -87,7 +88,7 @@ export function VolumeBarChart({ data, dataKey = 'orders', name = 'Orders', heig
           <XAxis dataKey={xKey} tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} interval="preserveStartEnd" minTickGap={10} />
           <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} width={money ? 76 : 36} tickFormatter={money ? (v) => formatCompactCurrency(v) : undefined} />
           <Tooltip content={<TooltipCard money={money} labelKey="label" />} cursor={{ fill: '#f1f5f9' }} />
-          <Bar dataKey={dataKey} name={name} fill={color} radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false} />
+          <Bar dataKey={dataKey} name={name} fill={color} radius={[4, 4, 0, 0]} maxBarSize={36} animationDuration={700} animationEasing="ease-out" />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -106,14 +107,14 @@ export function DonutChart({ data, total, centerLabel = 'Total', height = 220, v
       <div className="relative shrink-0" style={{ width: height, height }} role="img" aria-label={`Donut chart: ${data.map((d) => `${d.label} ${d.count}`).join(', ')}`}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie data={visible.length ? visible : [{ label: 'None', count: 1, color: '#e2e8f0' }]} dataKey="count" nameKey="label" innerRadius="66%" outerRadius="96%" paddingAngle={visible.length > 1 ? 2 : 0} stroke="#fff" strokeWidth={2} isAnimationActive={false}>
+            <Pie data={visible.length ? visible : [{ label: 'None', count: 1, color: '#e2e8f0' }]} dataKey="count" nameKey="label" innerRadius="66%" outerRadius="96%" paddingAngle={visible.length > 1 ? 2 : 0} stroke="#fff" strokeWidth={2} animationDuration={800} animationEasing="ease-out">
               {(visible.length ? visible : [{ color: '#e2e8f0' }]).map((d, i) => <Cell key={i} fill={d.color} />)}
             </Pie>
             {visible.length > 0 && <Tooltip content={<TooltipCard />} />}
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-extrabold tabular-nums text-ink">{valueFormatter(sum)}</span>
+          <span className="text-2xl font-extrabold tabular-nums text-ink"><AnimatedValue value={valueFormatter(sum)} /></span>
           <span className="text-[11px] font-medium text-muted">{centerLabel}</span>
         </div>
       </div>
@@ -147,7 +148,7 @@ export function BarList({ rows, format = formatNumber, color = '#2563eb', emptyT
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-100" aria-hidden>
-            <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${(r.value / max) * 100}%`, background: color }} />
+            <div className="h-full origin-left animate-grow-x rounded-full transition-[width] duration-500" style={{ width: `${(r.value / max) * 100}%`, background: color }} />
           </div>
         </li>
       ))}

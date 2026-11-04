@@ -37,7 +37,10 @@ export default function AppLayout() {
             id="main"
             className={`mx-auto w-full max-w-[1600px] px-3.5 pt-4 sm:px-6 lg:py-8 ${showTabs ? 'pb-[calc(6rem+env(safe-area-inset-bottom))]' : 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]'}`}
           >
-            <Outlet />
+            {/* Keyed by address so every page change replays the entrance animation */}
+            <div key={pathname} className="page-enter">
+              <Outlet />
+            </div>
           </main>
         </div>
         {showTabs && <BottomNav onMore={() => setMobileOpen(true)} />}

@@ -59,7 +59,7 @@ function MobileSortBar({ columns, table }) {
 
 function MobileCards({ rows, card, actionsCol, onRowClick, getRowLabel, rowClassName }) {
   return (
-    <ul className="divide-y divide-line md:hidden">
+    <ul className="animate-rows-in divide-y divide-line md:hidden">
       {rows.map((row) => (
         <li key={row.id} className={`relative flex items-center gap-3 px-4 py-3.5 transition-colors ${onRowClick ? 'active:bg-slate-50' : ''} ${rowClassName?.(row) ?? ''}`}>
           {onRowClick && (
@@ -92,12 +92,15 @@ export default function DataTable({ columns, table, loading, onRowClick, selecta
   if (loading) return <TableSkeleton rows={skeletonRows} cols={Math.min(columns.length, 7)} />
   const rows = table.pageRows
   const actionsCol = columns.find((c) => c.key === 'actions')
+  // Changes whenever a different set of rows is shown (page, sort, filter),
+  // remounting the rows so they fade in instead of snapping.
+  const rowsKey = `${table.page}:${table.sort?.key}:${table.sort?.dir}:${rows.length}:${rows[0]?.id}`
   return (
     <>
       {mobileCard && rows.length > 0 && (
         <>
           <MobileSortBar columns={columns} table={table} />
-          <MobileCards rows={rows} card={mobileCard} actionsCol={actionsCol} onRowClick={onRowClick} getRowLabel={getRowLabel} rowClassName={rowClassName} />
+          <MobileCards key={rowsKey} rows={rows} card={mobileCard} actionsCol={actionsCol} onRowClick={onRowClick} getRowLabel={getRowLabel} rowClassName={rowClassName} />
           {mobileFooter && <div className="border-t border-line bg-slate-50/80 px-4 py-3 md:hidden">{mobileFooter}</div>}
         </>
       )}
@@ -128,7 +131,7 @@ export default function DataTable({ columns, table, loading, onRowClick, selecta
               })}
             </tr>
           </thead>
-          <tbody>
+          <tbody key={rowsKey} className="animate-rows-in">
             {rows.map((row) => (
               <tr
                 key={row.id}

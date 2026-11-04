@@ -248,7 +248,7 @@ export default function CreateOrder() {
         description={isEdit ? 'Update garments, schedule and pricing. Recorded payments are not affected.' : 'Register the customer, log every garment, then confirm pricing and payment.'}
       />
 
-      <form onSubmit={(e) => { e.preventDefault(); submit('save') }} noValidate className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
+      <form id="order-form" onSubmit={(e) => { e.preventDefault(); submit('save') }} noValidate className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="space-y-6">
           {/* 1. Customer */}
           <Section step={1} title="Customer information" description="Find an existing customer or register a new one." icon={User}
@@ -460,18 +460,20 @@ export default function CreateOrder() {
           </Card>
         </aside>
 
-        {/* Mobile action bar */}
-        <div className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_-8px_rgb(16_24_40/0.12)] backdrop-blur-md lg:hidden">
-          <div className="mx-auto flex max-w-xl items-center gap-2.5">
-            <div className="mr-auto min-w-0">
-              <p className="text-[11px] font-medium text-muted">{garmentCount} item{garmentCount === 1 ? '' : 's'} · Total</p>
-              <p className="truncate text-lg font-extrabold leading-tight tabular-nums text-ink">{formatCurrency(totals.total, { decimals: 0 })}</p>
-            </div>
-            <Button variant="secondary" size="icon-lg" icon={Printer} className="shrink-0" aria-label="Save and print receipt" onClick={() => submit('print')} disabled={!!saving} />
-            <Button type="submit" size="lg" icon={Save} className="shrink-0" loading={saving === 'save'} disabled={!!saving}>{isEdit ? 'Save changes' : 'Save order'}</Button>
-          </div>
-        </div>
       </form>
+
+      {/* Mobile action bar (outside the form so the page-entrance animation
+          can't pin this fixed bar to the form; submits via form="order-form") */}
+      <div className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_-8px_rgb(16_24_40/0.12)] backdrop-blur-md lg:hidden">
+        <div className="mx-auto flex max-w-xl items-center gap-2.5">
+          <div className="mr-auto min-w-0">
+            <p className="text-[11px] font-medium text-muted">{garmentCount} item{garmentCount === 1 ? '' : 's'} · Total</p>
+            <p className="truncate text-lg font-extrabold leading-tight tabular-nums text-ink">{formatCurrency(totals.total, { decimals: 0 })}</p>
+          </div>
+          <Button variant="secondary" size="icon-lg" icon={Printer} className="shrink-0" aria-label="Save and print receipt" onClick={() => submit('print')} disabled={!!saving} />
+          <Button type="submit" form="order-form" size="lg" icon={Save} className="shrink-0" loading={saving === 'save'} disabled={!!saving}>{isEdit ? 'Save changes' : 'Save order'}</Button>
+        </div>
+      </div>
 
       <ConfirmDialog
         open={confirmLeave}

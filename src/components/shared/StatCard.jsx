@@ -1,5 +1,6 @@
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import { Area, AreaChart, ResponsiveContainer } from 'recharts'
+import AnimatedValue from '../ui/AnimatedValue'
 
 const TONES = {
   blue: { icon: 'bg-blue-50 text-blue-600', stroke: '#2563eb' },
@@ -41,7 +42,7 @@ export default function StatCard({ label, value, icon: Icon, tone = 'blue', chan
           </span>
         )}
       </div>
-      <p className="mt-1 truncate text-[19px] font-extrabold tracking-tight text-ink tabular-nums sm:text-2xl" title={String(value)}>{value}</p>
+      <p className="mt-1 truncate text-[19px] font-extrabold tracking-tight text-ink tabular-nums sm:text-2xl" title={String(value)}><AnimatedValue value={value} /></p>
       <div className="mt-auto flex items-center gap-2 pt-2 text-xs">
         {hasChange && (
           <span className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 font-bold ${good ? 'bg-emerald-50 text-emerald-700' : bad ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
@@ -60,7 +61,7 @@ export default function StatCard({ label, value, icon: Icon, tone = 'blue', chan
                     <stop offset="100%" stopColor={t.stroke} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <Area type="monotone" dataKey="v" stroke={t.stroke} strokeWidth={1.75} fill={`url(#${gradientId})`} isAnimationActive={false} dot={false} />
+                <Area type="monotone" dataKey="v" stroke={t.stroke} strokeWidth={1.75} fill={`url(#${gradientId})`} animationDuration={900} animationEasing="ease-out" dot={false} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -82,7 +83,7 @@ export function MiniStat({ label, value, icon: Icon, tone = 'blue', sub }) {
       )}
       <div className="w-full min-w-0">
         <p className="truncate text-xs font-semibold text-muted">{label}</p>
-        <p className="truncate text-lg font-extrabold tracking-tight text-ink tabular-nums">{value}</p>
+        <p className="truncate text-lg font-extrabold tracking-tight text-ink tabular-nums"><AnimatedValue value={value} /></p>
         {sub && <p className="truncate text-[11px] text-muted">{sub}</p>}
       </div>
     </div>
