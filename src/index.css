@@ -1,0 +1,128 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------
+   Papa Hila Laundry — design tokens
+   ------------------------------------------------------------------ */
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-navy-50: #f1f5fb;
+  --color-navy-100: #dfe7f3;
+  --color-navy-200: #bccbe2;
+  --color-navy-300: #8ea6cb;
+  --color-navy-400: #5d7aa9;
+  --color-navy-500: #3d5a89;
+  --color-navy-600: #2b4570;
+  --color-navy-700: #20375b;
+  --color-navy-800: #182d4c;
+  --color-navy-900: #142b4a;
+  --color-navy-950: #0c1b30;
+
+  --color-brand: #2563eb;
+  --color-brand-dark: #1d4ed8;
+  --color-sky-soft: #eaf3ff;
+  --color-canvas: #f7f9fc;
+  --color-ink: #172033;
+  --color-muted: #64748b;
+  --color-line: #e6eaf1;
+
+  --shadow-card: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.04);
+  --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.18), 0 4px 8px -4px rgb(16 24 40 / 0.06);
+
+  --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-slide-up: slide-up 0.2s ease-out;
+  --animate-slide-in-left: slide-in-left 0.22s ease-out;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes slide-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans text-sm leading-relaxed;
+  }
+  h1, h2, h3, h4 {
+    @apply text-ink tracking-tight;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    opacity: 0.4;
+  }
+  ::selection {
+    background: #cfe0ff;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl border border-line shadow-card;
+  }
+  .field-input {
+    @apply w-full h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-slate-400
+      transition-colors outline-none hover:border-slate-300
+      focus:border-brand focus:ring-4 focus:ring-brand/10
+      disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed;
+  }
+  .field-input.has-error {
+    @apply border-red-400 focus:border-red-500 focus:ring-red-500/10;
+  }
+  .table-base {
+    @apply w-full text-left text-sm;
+  }
+  .table-base thead th {
+    @apply bg-slate-50/80 px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap border-b border-line;
+  }
+  .table-base tbody td {
+    @apply px-4 py-3.5 border-b border-line/70 whitespace-nowrap align-middle;
+  }
+  .table-base tbody tr {
+    @apply transition-colors hover:bg-slate-50/70;
+  }
+  .table-base tbody tr:last-child td {
+    @apply border-b-0;
+  }
+}
+
+/* Thin scrollbars for panels */
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: #d5dbe5; border-radius: 99px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Recharts focus outline cleanup */
+.recharts-wrapper *:focus { outline: none; }
+
+/* ------------------------------------------------------------------
+   Print: only the receipt (or any .print-area) is printed
+   ------------------------------------------------------------------ */
+.print-root { display: none; }
+
+@media print {
+  @page { size: A5 portrait; margin: 8mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  /* While printing a receipt, hide everything except the print root */
+  body.printing-receipt > *:not(.print-root) { display: none !important; }
+  body.printing-receipt .print-root { display: block !important; }
+  .print-root > div { max-width: none !important; padding: 0 !important; }
+  .print-root tr, .print-root td { page-break-inside: avoid; break-inside: avoid; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
