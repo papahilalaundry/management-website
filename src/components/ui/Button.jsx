@@ -15,9 +15,10 @@ const VARIANTS = {
 const SIZES = {
   xs: 'h-7 px-2.5 text-xs gap-1.5 rounded-md',
   sm: 'h-8 px-3 text-[13px] gap-1.5 rounded-lg',
-  md: 'h-10 px-4 text-sm gap-2 rounded-lg',
+  md: 'h-11 sm:h-10 px-4 text-sm gap-2 rounded-lg',
   lg: 'h-11 px-5 text-[15px] gap-2 rounded-xl',
   icon: 'h-9 w-9 rounded-lg justify-center',
+  'icon-lg': 'h-11 w-11 rounded-xl justify-center',
   'icon-sm': 'h-8 w-8 rounded-lg justify-center',
 }
 

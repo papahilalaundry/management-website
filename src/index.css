@@ -32,6 +32,7 @@
   --animate-fade-in: fade-in 0.18s ease-out;
   --animate-slide-up: slide-up 0.2s ease-out;
   --animate-slide-in-left: slide-in-left 0.22s ease-out;
+  --animate-sheet-up: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -40,6 +41,10 @@
   @keyframes slide-up {
     from { opacity: 0; transform: translateY(8px) scale(0.98); }
     to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes sheet-up {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
   }
   @keyframes slide-in-left {
     from { transform: translateX(-100%); }
@@ -51,6 +56,17 @@
   html {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+  /* Grid children default to min-width:auto, which lets a wide table
+     push the whole page sideways on phones. */
+  main .grid > * {
+    min-width: 0;
+  }
+  /* Buttons and links respond instantly to taps (no 300ms double-tap delay) */
+  a, button, [role='button'], label, select {
+    touch-action: manipulation;
   }
   body {
     @apply bg-canvas text-ink font-sans text-sm leading-relaxed;
@@ -76,8 +92,9 @@
   .card {
     @apply bg-white rounded-xl border border-line shadow-card;
   }
+  /* 16px text on phones stops iOS Safari zooming in when a field is focused */
   .field-input {
-    @apply w-full h-10 rounded-lg border border-line bg-white px-3 text-sm text-ink placeholder:text-slate-400
+    @apply w-full h-11 sm:h-10 rounded-lg border border-line bg-white px-3 text-base sm:text-sm text-ink placeholder:text-slate-400
       transition-colors outline-none hover:border-slate-300
       focus:border-brand focus:ring-4 focus:ring-brand/10
       disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed;
@@ -100,6 +117,44 @@
   .table-base tbody tr:last-child td {
     @apply border-b-0;
   }
+}
+
+/* Safe areas for notched phones / installed app mode */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+
+/* Hide scrollbars on horizontally scrolling chip rows (still scrollable) */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Phones: a row of stat cards becomes a horizontally swipeable strip so the
+   list below stays near the top of the screen. */
+@media (max-width: 639px) {
+  .stat-strip {
+    display: flex;
+    gap: 0.625rem;
+    overflow-x: auto;
+    margin-inline: -0.875rem;
+    padding: 0 0.875rem 2px;
+    scroll-padding-inline: 0.875rem;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .stat-strip::-webkit-scrollbar { display: none; }
+  .stat-strip > * {
+    flex: 0 0 9.75rem;
+    scroll-snap-align: start;
+  }
+
+  /* Tighter vertical rhythm on small screens */
+  main .space-y-6 > :not(:last-child) { margin-bottom: 1rem; }
+  main .gap-6 { gap: 1rem; }
+}
+
+/* iPhone/iPad Safari zooms the page when a control with text under 16px is
+   focused. This rule only matches iOS WebKit, so desktop sizes are untouched. */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea { font-size: max(16px, 1em) !important; }
 }
 
 /* Thin scrollbars for panels */

@@ -7,7 +7,7 @@ import { OrderStatusBadge } from '../shared/StatusBadges'
 import { displayPhone } from '../../utils/validators'
 
 /** Searches orders (ID, customer, phone, garment) and customers. Shortcut: Ctrl/⌘+K or "/". */
-export default function GlobalSearch({ className = '' }) {
+export default function GlobalSearch({ className = '', autoFocus = false, inline = false, onNavigate }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
@@ -70,6 +70,7 @@ export default function GlobalSearch({ className = '' }) {
     setQuery('')
     setOpen(false)
     inputRef.current?.blur()
+    onNavigate?.()
   }
 
   const onKeyDown = (e) => {
@@ -89,29 +90,36 @@ export default function GlobalSearch({ className = '' }) {
 
   return (
     <div ref={boxRef} className={`relative ${className}`}>
-      <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
-      <input
-        ref={inputRef}
-        type="search"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setActive(0)
-          setOpen(true)
-        }}
-        onFocus={ensureIndex}
-        onKeyDown={onKeyDown}
-        placeholder="Search orders, customers, phone…"
-        aria-label="Search orders and customers"
-        role="combobox"
-        aria-expanded={open && !!q}
-        aria-controls="global-search-results"
-        className="h-10 w-full rounded-lg border border-line bg-slate-50/80 pl-9 pr-14 text-sm outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-brand focus:bg-white focus:ring-4 focus:ring-brand/10 [&::-webkit-search-cancel-button]:hidden"
-      />
-      <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 md:block">Ctrl K</kbd>
+      <div className="relative">
+        <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
+        <input
+          ref={inputRef}
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setActive(0)
+            setOpen(true)
+          }}
+          onFocus={ensureIndex}
+          autoFocus={autoFocus}
+          enterKeyHint="search"
+          onKeyDown={onKeyDown}
+          placeholder="Search orders, customers, phone…"
+          aria-label="Search orders and customers"
+          role="combobox"
+          aria-expanded={open && !!q}
+          aria-controls="global-search-results"
+          className="h-11 w-full rounded-lg border border-line bg-slate-50/80 pl-9 pr-14 text-base outline-none sm:h-10 sm:text-sm transition placeholder:text-slate-400 hover:border-slate-300 focus:border-brand focus:bg-white focus:ring-4 focus:ring-brand/10 [&::-webkit-search-cancel-button]:hidden"
+        />
+        <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded border border-line bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 lg:block">Ctrl K</kbd>
+      </div>
 
+      {inline && !q && (
+        <p className="px-2 pt-8 text-center text-[13px] text-muted">Search by order number, customer name, phone number or garment.</p>
+      )}
       {open && q && (
-        <div id="global-search-results" role="listbox" className="absolute left-0 right-0 top-12 z-40 animate-fade-in overflow-hidden rounded-xl border border-line bg-white shadow-pop">
+        <div id="global-search-results" role="listbox" className={inline ? 'mt-3 animate-fade-in overflow-hidden rounded-xl border border-line bg-white' : 'absolute left-0 right-0 top-12 z-40 animate-fade-in overflow-hidden rounded-xl border border-line bg-white shadow-pop'}>
           {loading || !index ? (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted">
               <LoaderCircle size={16} className="animate-spin" /> Searching…
@@ -119,14 +127,14 @@ export default function GlobalSearch({ className = '' }) {
           ) : results.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-muted">No orders or customers match “{query}”.</div>
           ) : (
-            <ul className="max-h-96 overflow-y-auto p-1.5">
+            <ul className={inline ? 'p-1.5' : 'max-h-96 overflow-y-auto p-1.5'}>
               {results.map((r, i) => (
                 <li key={`${r.type}-${r.id}`} role="option" aria-selected={i === active}>
                   <button
                     type="button"
                     onMouseEnter={() => setActive(i)}
                     onClick={() => go(r)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left ${i === active ? 'bg-slate-100' : ''}`}
+                    className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left sm:py-2 ${i === active ? 'bg-slate-100' : ''}`}
                   >
                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${r.type === 'order' ? 'bg-sky-soft text-brand' : 'bg-emerald-50 text-emerald-600'}`}>
                       {r.type === 'order' ? <ClipboardList size={15} /> : <User size={15} />}

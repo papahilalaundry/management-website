@@ -101,6 +101,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <PageHeader
         title={`${greeting()}, ${firstName}`}
+        mobileTitle
         description={
           d
             ? `${format(new Date(), 'EEEE, d MMMM yyyy')} · ${d.overdue.length ? `${d.overdue.length} overdue order${d.overdue.length > 1 ? 's need' : ' needs'} attention, ` : ''}${d.schedule.length} scheduled for today.`
@@ -109,7 +110,7 @@ export default function Dashboard() {
         actions={
           <>
             <DateRangeFilter value={range} onChange={setRange} />
-            {can('orders.create') && <Button to="/orders/new" icon={Plus}>Create New Order</Button>}
+            {can('orders.create') && <span className="hidden lg:block"><Button to="/orders/new" icon={Plus}>Create New Order</Button></span>}
           </>
         }
       />
@@ -119,7 +120,7 @@ export default function Dashboard() {
       ) : (
         <>
           {/* KPI cards */}
-          <section aria-label="Key statistics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label="Key statistics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
             {!s ? (
               Array.from({ length: finance ? 8 : 4 }).map((_, i) => <StatCardSkeleton key={i} />)
             ) : (

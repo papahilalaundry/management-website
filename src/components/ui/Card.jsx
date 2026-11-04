@@ -8,8 +8,8 @@ export function Card({ className = '', children, as: Tag = 'div', ...props }) {
 
 export function CardHeader({ title, description, icon: Icon, action, className = '' }) {
   return (
-    <div className={`flex items-start justify-between gap-3 px-5 pb-3 pt-5 ${className}`}>
-      <div className="flex min-w-0 items-start gap-3">
+    <div className={`flex flex-wrap items-start justify-between gap-3 px-4 pb-3 pt-4 sm:px-5 sm:pt-5 ${className}`}>
+      <div className="flex min-w-0 flex-1 basis-40 items-start gap-3">
         {Icon && (
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-soft text-brand">
             <Icon size={16} strokeWidth={2} aria-hidden />
@@ -26,5 +26,5 @@ export function CardHeader({ title, description, icon: Icon, action, className =
 }
 
 export function CardBody({ className = '', children }) {
-  return <div className={`px-5 pb-5 ${className}`}>{children}</div>
+  return <div className={`px-4 pb-4 sm:px-5 sm:pb-5 ${className}`}>{children}</div>
 }

@@ -3,7 +3,7 @@ import { ChevronRight } from 'lucide-react'
 
 export function Breadcrumbs({ items }) {
   return (
-    <nav aria-label="Breadcrumb" className="mb-2">
+    <nav aria-label="Breadcrumb" className="mb-2 hidden sm:block">
       <ol className="flex flex-wrap items-center gap-1 text-xs text-muted">
         {items.map((item, i) => (
           <li key={item.label} className="flex items-center gap-1">
@@ -20,17 +20,27 @@ export function Breadcrumbs({ items }) {
   )
 }
 
-export default function PageHeader({ title, description, actions, breadcrumbs, children }) {
+/**
+ * On phones the top bar already shows the page name, so by default the big
+ * title and description are hidden there (still read by screen readers).
+ * Pass `mobileTitle` when the title says something the top bar doesn't
+ * (an order number, a customer's name, the dashboard greeting).
+ */
+export default function PageHeader({ title, description, actions, breadcrumbs, children, mobileTitle = false }) {
   return (
-    <div className="mb-6">
+    <div className={`mb-4 sm:mb-6 ${!actions && !mobileTitle && !children ? 'max-sm:mb-0' : ''}`}>
       {breadcrumbs && <Breadcrumbs items={breadcrumbs} />}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-extrabold tracking-tight text-ink sm:text-[26px]">{title}</h1>
-          {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+        <div className={`min-w-0 ${mobileTitle || children ? '' : 'max-sm:sr-only'}`}>
+          <h1 className={`text-[22px] font-extrabold leading-tight tracking-tight text-ink sm:text-[26px] ${mobileTitle ? '' : 'max-sm:sr-only'}`}>{title}</h1>
+          {description && <p className={`mt-1 text-[13px] text-muted sm:text-sm ${mobileTitle ? '' : 'max-sm:hidden'}`}>{description}</p>}
           {children}
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex flex-wrap items-center gap-2">
+            {actions}
+          </div>
+        )}
       </div>
     </div>
   )

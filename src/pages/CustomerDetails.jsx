@@ -68,6 +68,7 @@ export default function CustomerDetails() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: 'Customers', to: '/customers' }, { label: c.name }]}
+        mobileTitle
         title={c.name}
         description={`${c.id} · Customer since ${formatDate(c.createdAt)}`}
         actions={

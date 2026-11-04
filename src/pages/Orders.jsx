@@ -154,12 +154,12 @@ export default function Orders() {
                 { label: 'PDF report', icon: FileText, onClick: () => doExport('pdf') },
               ]}
             />
-            {can('orders.create') && <Button to="/orders/new" icon={Plus}>Create New Order</Button>}
+            {can('orders.create') && <span className="hidden lg:block"><Button to="/orders/new" icon={Plus}>Create New Order</Button></span>}
           </>
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" aria-label="Order statistics">
+      <section className="stat-strip grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" aria-label="Order statistics">
         <MiniStat label="Total orders" value={formatNumber(counts.all)} icon={ClipboardList} tone="blue" sub="Excludes cancelled" />
         <MiniStat label="Pending" value={formatNumber(counts.received ?? 0)} icon={Hourglass} tone="amber" sub="Awaiting processing" />
         <MiniStat label="In progress" value={formatNumber(IN_PROGRESS_STATUSES.reduce((s, k) => s + (counts[k] ?? 0), 0))} icon={WashingMachine} tone="violet" sub="Washing · drying · ironing" />

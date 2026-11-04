@@ -13,13 +13,16 @@ export function SmsProvider({ children }) {
   const [preview, setPreview] = useState(null)
 
   const notifySms = useCallback(
-    (sms) => {
+    (sms, { autoPreview = true } = {}) => {
       if (!sms) return
       toast.success(`SMS sent to ${sms.customerName} (simulated)`, {
         description: sms.templateLabel,
         action: { label: 'Preview', onClick: () => setPreview(sms) },
       })
-      if (settings?.notifications?.smsPreview) setPreview(sms)
+      // Callers that show their own confirmation (e.g. the "Payment recorded"
+      // sheet) pass autoPreview: false so two dialogs never stack. The toast's
+      // "Preview" button still opens the message.
+      if (settings?.notifications?.smsPreview && autoPreview) setPreview(sms)
     },
     [settings?.notifications?.smsPreview],
   )

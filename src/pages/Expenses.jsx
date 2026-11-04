@@ -203,7 +203,7 @@ export default function Expenses() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MiniStat label="This month" value={formatCurrency(stats.thisMonth, { decimals: 0 })} icon={ReceiptText} tone="amber" sub={`Last month ${formatCompactCurrency(stats.lastMonth)}`} />
         <MiniStat label="Today" value={formatCurrency(stats.today, { decimals: 0 })} icon={CalendarDays} tone="blue" />
         <MiniStat label="Largest category" value={stats.breakdown[0]?.label ?? '—'} icon={Tags} tone="violet" sub={stats.breakdown[0] ? `${formatCurrency(stats.breakdown[0].value, { decimals: 0 })} · ${describeRange(range).toLowerCase()}` : undefined} />
@@ -228,6 +228,19 @@ export default function Expenses() {
         </div>
         {error && !data ? <ErrorState error={error} onRetry={reload} /> : (
           <DataTable columns={columns} table={table} loading={loading && !data} onRowClick={(e) => setModal({ expense: e })} getRowLabel={(e) => `Edit expense ${e.id}`}
+            mobileCard={{
+              title: (e) => e.title,
+              subtitle: (e) => <>{e.category} · {formatDate(e.date)}</>,
+              meta: (e) => (e.vendor ? <span className="inline-flex items-center gap-1">{e.vendor}{e.attachmentName && <Paperclip size={11} aria-label="Has attachment" />}</span> : null),
+              value: (e) => formatCurrency(e.amount, { decimals: 0 }),
+              badge: (e) => <MethodBadge method={e.method} />,
+            }}
+            mobileFooter={
+              <div className="flex items-center justify-between text-[13px] font-bold">
+                <span className="text-muted">Total · {table.total} expense{table.total === 1 ? '' : 's'}</span>
+                <span className="tabular-nums text-ink">{formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</span>
+              </div>
+            }
             empty={<EmptyState icon={ReceiptText} title="No expenses in this period" description="Try a wider date range, or record a new expense." action={<Button icon={Plus} onClick={() => setModal({})}>Record expense</Button>} />}
             footer={table.total > 0 && (
               <tfoot><tr className="bg-slate-50/80 text-[13px] font-bold"><td colSpan={4} className="px-4 py-3 text-muted">Total ({table.total})</td><td className="px-4 py-3 text-right tabular-nums text-ink">{formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</td><td colSpan={3} /></tr></tfoot>

@@ -187,7 +187,7 @@ export default function Staff() {
   return (
     <div className="space-y-6">
       <PageHeader title="Staff Management" description="Team accounts, roles and access." actions={<Button icon={UserPlus} onClick={() => setModal({ kind: 'edit' })}>Add staff member</Button>} />
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MiniStat label="Team members" value={formatNumber(staff.length)} icon={Users} tone="blue" />
         <MiniStat label="Active accounts" value={formatNumber(staff.filter((s) => s.status === 'active').length)} icon={Power} tone="green" />
         <MiniStat label="Managers & admins" value={formatNumber(staff.filter((s) => s.role !== 'staff').length)} icon={ShieldCheck} tone="navy" />
@@ -199,7 +199,14 @@ export default function Staff() {
           <SearchInput value={query} onChange={setQuery} placeholder="Search by name, email or ID…" className="flex-1" />
         </div>
         {error && !data ? <ErrorState error={error} onRetry={reload} /> : (
-          <DataTable columns={columns} table={table} loading={loading && !data} onRowClick={(s) => setModal({ kind: 'profile', member: s })} getRowLabel={(s) => `View ${s.name}`} rowClassName={(s) => (s.status === 'inactive' ? 'opacity-60' : '')} />
+          <DataTable columns={columns} table={table} loading={loading && !data} onRowClick={(s) => setModal({ kind: 'profile', member: s })} getRowLabel={(s) => `View ${s.name}`}
+            mobileCard={{
+              leading: (s) => <Avatar name={s.name} size="md" />,
+              title: (s) => <>{s.name}{s.id === user.id && <span className="ml-1.5 text-xs font-medium text-brand">(you)</span>}</>,
+              subtitle: (s) => s.title,
+              meta: (s) => <span>{formatNumber(s.ordersHandled)} orders handled{s.status !== 'active' ? ' · Inactive' : ''}</span>,
+              badge: (s) => <RoleBadge role={s.role} />,
+            }} rowClassName={(s) => (s.status === 'inactive' ? 'opacity-60' : '')} />
         )}
       </Card>
 

@@ -126,7 +126,7 @@ export default function Payments() {
       />
       <p className="-mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">M-Pesa payments are recorded manually and simulated — this system does not connect to Safaricom or move real money.</p>
 
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5" aria-label="Payment statistics">
+      <section className="stat-strip grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5" aria-label="Payment statistics">
         <MiniStat label="Total received" value={formatCurrency(stats.total, { decimals: 0 })} icon={CircleDollarSign} tone="navy" sub={`${formatNumber(stats.count)} payments · ${describeRange(range).toLowerCase()}`} />
         <MiniStat label="Received today" value={formatCurrency(stats.today, { decimals: 0 })} icon={CalendarCheck} tone="blue" sub={`${stats.todayCount} payment${stats.todayCount === 1 ? '' : 's'}`} />
         <MiniStat label="M-Pesa" value={formatCurrency(stats.mpesa, { decimals: 0 })} icon={Smartphone} tone="green" sub={`${pct(stats.mpesa)}% of period total`} />
@@ -148,6 +148,20 @@ export default function Payments() {
             loading={loading && !data}
             onRowClick={(p) => setReceipt(p)}
             getRowLabel={(p) => `View receipt ${p.id}`}
+            mobileCard={{
+              leading: (p) => <Avatar name={p.customerName} size="md" />,
+              title: (p) => p.customerName,
+              subtitle: (p) => <><span className="font-mono font-semibold text-slate-600">{p.orderId}</span> · {formatDate(p.paidAt)}, {formatTime(p.paidAt)}</>,
+              meta: (p) => (p.reference ? <span className="font-mono">{p.reference}</span> : null),
+              value: (p) => formatCurrency(p.amount, { decimals: 0 }),
+              badge: (p) => <MethodBadge method={p.method} />,
+            }}
+            mobileFooter={
+              <div className="flex items-center justify-between text-[13px] font-bold">
+                <span className="text-muted">Total · {table.total} payment{table.total === 1 ? '' : 's'}</span>
+                <span className="tabular-nums text-ink">{formatCurrency(filtered.reduce((s, p) => s + p.amount, 0))}</span>
+              </div>
+            }
             empty={<EmptyState icon={Wallet} title="No payments in this period" description="Try a wider date range or record a new payment." action={<Button icon={Plus} onClick={() => setRecording(true)}>Record payment</Button>} />}
             footer={
               table.total > 0 && (

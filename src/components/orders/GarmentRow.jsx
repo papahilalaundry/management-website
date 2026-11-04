@@ -44,7 +44,7 @@ export default function GarmentRow({ index, item, services, errors = {}, onChang
   }
 
   return (
-    <div className={`rounded-xl border bg-white p-4 transition ${hasError ? 'border-red-200' : 'border-line hover:border-slate-300'}`}>
+    <div className={`rounded-xl border bg-white p-3.5 transition sm:p-4 ${hasError ? 'border-red-200' : 'border-line hover:border-slate-300'}`}>
       <div className="mb-3 flex items-center justify-between">
         <span className="inline-flex items-center gap-2 text-[13px] font-bold text-ink">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-navy-900 text-[11px] text-white">{index + 1}</span>
@@ -65,7 +65,7 @@ export default function GarmentRow({ index, item, services, errors = {}, onChang
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-12">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-12">
         <Field label="Category" className="sm:col-span-4 xl:col-span-3">
           {(p) => <Select {...p} value={item.category} onChange={(e) => update({ category: e.target.value, name: e.target.value === 'Other' ? '' : item.name })} options={GARMENT_CATEGORIES.map((c) => ({ value: c, label: c }))} />}
         </Field>
@@ -79,7 +79,7 @@ export default function GarmentRow({ index, item, services, errors = {}, onChang
             </>
           )}
         </Field>
-        <Field label="Service" required error={errors.serviceId} className="sm:col-span-12 xl:col-span-5">
+        <Field label="Service" required error={errors.serviceId} className="col-span-2 sm:col-span-12 xl:col-span-5">
           {(p) => (
             <Select {...p} value={item.serviceId} onChange={(e) => changeService(e.target.value)} placeholder="Select service">
               {services.filter((s) => s.active || s.id === item.serviceId).map((s) => (
@@ -94,9 +94,9 @@ export default function GarmentRow({ index, item, services, errors = {}, onChang
         <Field label={`Price / ${unit}`} required error={errors.unitPrice} className="sm:col-span-4 xl:col-span-4">
           {(p) => <Input {...p} type="number" inputMode="decimal" min="0" step="10" prefix="KES" value={item.unitPrice} onChange={(e) => update({ unitPrice: e.target.value, priceTouched: true })} />}
         </Field>
-        <div className="flex flex-col justify-end sm:col-span-4 xl:col-span-5">
+        <div className="col-span-2 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 sm:col-span-4 sm:flex-col sm:items-stretch sm:justify-end sm:bg-transparent sm:p-0 xl:col-span-5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted sm:text-right">Subtotal</p>
-          <p className="h-10 whitespace-nowrap text-[15px] font-extrabold leading-10 tabular-nums text-ink sm:text-right">{formatCurrency(lineTotal(item), { decimals: 0 })}</p>
+          <p className="whitespace-nowrap text-[15px] font-extrabold tabular-nums text-ink sm:h-10 sm:text-right sm:leading-10">{formatCurrency(lineTotal(item), { decimals: 0 })}</p>
         </div>
       </div>
       {service && Number(item.unitPrice) !== service.price && item.unitPrice !== '' && (

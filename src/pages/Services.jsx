@@ -124,7 +124,7 @@ export default function Services() {
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MiniStat label="Services" value={formatNumber(services.length)} icon={Tag} tone="blue" />
         <MiniStat label="Active" value={formatNumber(services.filter((s) => s.active).length)} icon={Power} tone="green" />
         <MiniStat label="Average item price" value={formatCurrency(avg, { decimals: 0 })} icon={Shirt} tone="violet" sub="Per-item services" />

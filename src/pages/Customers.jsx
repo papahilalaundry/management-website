@@ -142,7 +142,7 @@ export default function Customers() {
         }
       />
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Customer statistics">
+      <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Customer statistics">
         <MiniStat label="Total customers" value={formatNumber(stats.total)} icon={Users} tone="blue" />
         <MiniStat label="New this month" value={formatNumber(stats.newThisMonth)} icon={UserPlus} tone="violet" />
         <MiniStat label="Active (60 days)" value={formatNumber(stats.active)} icon={UserCheck} tone="green" />
@@ -163,6 +163,14 @@ export default function Customers() {
             loading={loading && !data}
             onRowClick={(c) => navigate(`/customers/${c.id}`)}
             getRowLabel={(c) => `Open profile for ${c.name}`}
+            mobileCard={{
+              leading: (c) => <Avatar name={c.name} size="md" />,
+              title: (c) => c.name,
+              subtitle: (c) => <span className="tabular-nums">{displayPhone(c.phone)}</span>,
+              meta: (c) => <span>{c.totalOrders} order{c.totalOrders === 1 ? '' : 's'} · {c.lastOrderAt ? `last ${timeAgo(c.lastOrderAt)}` : 'no orders yet'}</span>,
+              value: (c) => (c.outstanding > 0 ? <span className="text-red-600">{formatCurrency(c.outstanding, { decimals: 0 })}</span> : null),
+              badge: (c) => (c.outstanding > 0 ? <span className="text-[11px] font-medium text-red-600">owes</span> : null),
+            }}
             empty={
               <EmptyState
                 icon={Users}

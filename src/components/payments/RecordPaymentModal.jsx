@@ -83,7 +83,7 @@ export default function RecordPaymentModal({ open, onClose, order: fixedOrder, c
       const res = await paymentService.createPayment({ ...form, amount: Number(form.amount), paidAt: new Date(form.paidAt).toISOString() })
       setResult(res)
       toast.success(`Payment of ${formatCurrency(res.payment.amount)} recorded`, { description: `${res.order.id} · ${res.order.balance > 0 ? `Balance ${formatCurrency(res.order.balance)}` : 'Fully paid'}` })
-      notifySms(res.sms)
+      notifySms(res.sms, { autoPreview: false })
       onRecorded?.(res)
     } catch (err) {
       setErrors(err.fields ?? {})

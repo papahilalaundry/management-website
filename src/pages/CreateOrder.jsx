@@ -43,17 +43,17 @@ function dueFor(priority, from = new Date()) {
 function Section({ step, title, description, icon: Icon, children, action }) {
   return (
     <Card as="section" aria-labelledby={`step-${step}`}>
-      <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
-        <div className="flex items-start gap-3">
+      <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-5 sm:py-4">
+        <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-soft text-brand"><Icon size={18} aria-hidden /></span>
           <div>
             <h2 id={`step-${step}`} className="text-[15px] font-bold text-ink"><span className="mr-1.5 text-muted">{step}.</span>{title}</h2>
-            {description && <p className="text-xs text-muted">{description}</p>}
+            {description && <p className="hidden text-xs text-muted sm:block">{description}</p>}
           </div>
         </div>
-        {action}
+        {action && <div className="shrink-0">{action}</div>}
       </div>
-      <div className="p-5">{children}</div>
+      <div className="p-4 sm:p-5">{children}</div>
     </Card>
   )
 }
@@ -226,12 +226,12 @@ export default function CreateOrder() {
       if (isEdit) {
         const res = await orderService.updateOrder(editId, payload)
         toast.success(`Order ${res.order.id} updated`)
-        navigate(`/orders/${res.order.id}${mode === 'print' ? '?print=1' : ''}`)
+        navigate(`/orders/${res.order.id}${mode === 'print' ? '?print=1' : ''}`, { replace: true })
       } else {
         const res = await orderService.createOrder(payload)
         toast.success(`Order ${res.order.id} created`, { description: `${garmentCount} garments · ${formatCurrency(res.order.total)}` })
         notifySms(res.sms)
-        navigate(`/orders/${res.order.id}${mode === 'print' ? '?print=1' : ''}`)
+        navigate(`/orders/${res.order.id}${mode === 'print' ? '?print=1' : ''}`, { replace: true })
       }
     } catch (e) {
       if (e.fields) setErrors((prev) => ({ ...prev, ...e.fields }))
@@ -241,7 +241,7 @@ export default function CreateOrder() {
   }
 
   return (
-    <div className="pb-24 lg:pb-0">
+    <div>
       <PageHeader
         breadcrumbs={[{ label: 'Orders', to: '/orders' }, ...(isEdit ? [{ label: editId, to: `/orders/${editId}` }] : []), { label: isEdit ? 'Edit' : 'New order' }]}
         title={isEdit ? `Edit order ${editId}` : 'Create new order'}
@@ -301,10 +301,11 @@ export default function CreateOrder() {
                 />
               ))}
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="secondary" icon={Plus} onClick={() => set({ items: [...form.items, newItem(services)] })}>Add garment</Button>
+            <Button variant="secondary" icon={Plus} className="mt-3 w-full sm:hidden" onClick={() => set({ items: [...form.items, newItem(services)] })}>Add garment</Button>
+            <div className="no-scrollbar -mx-4 mt-2 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:mt-3 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
+              <Button variant="secondary" icon={Plus} className="max-sm:hidden" onClick={() => set({ items: [...form.items, newItem(services)] })}>Add garment</Button>
               {['Trousers', 'Bedsheet', 'Duvet', 'Suit (2-piece)', 'Curtain'].map((g) => (
-                <Button key={g} variant="ghost" size="sm" icon={Plus} onClick={() => set({ items: [...form.items, newItem(services, g, ['Bedsheet', 'Duvet', 'Curtain'].includes(g) ? 'Household' : 'Clothing')] })}>{g}</Button>
+                <Button key={g} variant="ghost" size="sm" icon={Plus} className="max-sm:h-9 max-sm:rounded-full max-sm:border max-sm:border-line max-sm:bg-white" onClick={() => set({ items: [...form.items, newItem(services, g, ['Bedsheet', 'Duvet', 'Curtain'].includes(g) ? 'Household' : 'Clothing')] })}>{g}</Button>
               ))}
             </div>
           </Section>
@@ -460,20 +461,22 @@ export default function CreateOrder() {
         </aside>
 
         {/* Mobile action bar */}
-        <div className="no-print fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t border-line bg-white/95 p-3 backdrop-blur lg:hidden">
-          <div className="mr-auto">
-            <p className="text-[11px] text-muted">Total</p>
-            <p className="text-base font-extrabold tabular-nums text-ink">{formatCurrency(totals.total, { decimals: 0 })}</p>
+        <div className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_-8px_rgb(16_24_40/0.12)] backdrop-blur-md lg:hidden">
+          <div className="mx-auto flex max-w-xl items-center gap-2.5">
+            <div className="mr-auto min-w-0">
+              <p className="text-[11px] font-medium text-muted">{garmentCount} item{garmentCount === 1 ? '' : 's'} · Total</p>
+              <p className="truncate text-lg font-extrabold leading-tight tabular-nums text-ink">{formatCurrency(totals.total, { decimals: 0 })}</p>
+            </div>
+            <Button variant="secondary" size="icon-lg" icon={Printer} className="shrink-0" aria-label="Save and print receipt" onClick={() => submit('print')} disabled={!!saving} />
+            <Button type="submit" size="lg" icon={Save} className="shrink-0" loading={saving === 'save'} disabled={!!saving}>{isEdit ? 'Save changes' : 'Save order'}</Button>
           </div>
-          <Button variant="secondary" size="icon" icon={Printer} aria-label="Save and print" onClick={() => submit('print')} disabled={!!saving} />
-          <Button type="submit" icon={Save} loading={saving === 'save'} disabled={!!saving}>Save</Button>
         </div>
       </form>
 
       <ConfirmDialog
         open={confirmLeave}
         onClose={() => setConfirmLeave(false)}
-        onConfirm={() => navigate(isEdit ? `/orders/${editId}` : '/orders')}
+        onConfirm={() => navigate(isEdit ? `/orders/${editId}` : '/orders', { replace: true })}
         title="Discard this order?"
         message="Any information you’ve entered will be lost."
         confirmLabel="Discard"

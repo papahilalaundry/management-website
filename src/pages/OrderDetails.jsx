@@ -46,7 +46,7 @@ function GarmentStatusSelect({ item, disabled, canRevert, onChange }) {
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         aria-label={`Status for ${item.name}`}
-        className="h-8 cursor-pointer appearance-none rounded-full border border-line bg-white pl-6 pr-7 text-xs font-semibold text-ink transition hover:border-slate-300 focus:border-brand disabled:cursor-default disabled:bg-slate-50"
+        className="h-9 cursor-pointer appearance-none rounded-full border border-line bg-white pl-6 pr-7 text-[13px] font-semibold sm:h-8 sm:text-xs text-ink transition hover:border-slate-300 focus:border-brand disabled:cursor-default disabled:bg-slate-50"
       >
         {ORDER_STAGES.map((s, i) => (
           <option key={s.value} value={s.value} disabled={i < current && !canRevert}>{s.short}</option>
@@ -154,6 +154,7 @@ export default function OrderDetails() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: 'Orders', to: '/orders' }, { label: order.id }]}
+        mobileTitle
         title={
           <span className="flex flex-wrap items-center gap-3">
             <span className="font-mono">{order.id}</span>
@@ -171,15 +172,31 @@ export default function OrderDetails() {
             )}
             <Button variant="secondary" icon={Printer} onClick={() => actions.open('receipt', order)}>Print receipt</Button>
             {order.balance > 0 && !cancelled && can('payments.record') && (
-              <Button variant="secondary" icon={Wallet} onClick={() => actions.open('payment', order)}>Record payment</Button>
+              <span className="hidden lg:block"><Button variant="secondary" icon={Wallet} onClick={() => actions.open('payment', order)}>Record payment</Button></span>
             )}
             {next && canUpdate && (
-              <Button icon={STATUS_META[next.value].icon} loading={advancing} onClick={advance}>Mark as {next.short}</Button>
+              <span className="hidden lg:block"><Button icon={STATUS_META[next.value].icon} loading={advancing} onClick={advance}>Mark as {next.short}</Button></span>
             )}
             <Dropdown width={230} items={moreItems} trigger={<Button variant="secondary" size="icon" icon={MoreHorizontal} aria-label="More actions" />} />
           </>
         }
       />
+
+      {/* Phones: main actions pinned to the bottom of the screen, within thumb reach */}
+      {((order.balance > 0 && !cancelled && can('payments.record')) || (next && canUpdate)) && (
+        <div className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_-8px_rgb(16_24_40/0.12)] backdrop-blur-md lg:hidden">
+          <div className="mx-auto flex max-w-xl gap-2.5">
+            {order.balance > 0 && !cancelled && can('payments.record') && (
+              <Button variant="secondary" size="lg" icon={Wallet} className="flex-1" onClick={() => actions.open('payment', order)}>
+                Pay {formatCurrency(order.balance, { decimals: 0 })}
+              </Button>
+            )}
+            {next && canUpdate && (
+              <Button size="lg" icon={STATUS_META[next.value].icon} loading={advancing} className="flex-1" onClick={advance}>Mark as {next.short}</Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {cancelled && (
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-[13px] text-red-800" role="status">
@@ -211,7 +228,34 @@ export default function OrderDetails() {
           {/* Garments */}
           <Card>
             <CardHeader title="Garments" description={`${order.garmentCount} items across ${order.items.length} lines — track each garment individually.`} icon={Shirt} />
-            <div className="scroll-thin overflow-x-auto border-t border-line">
+            {/* Phones: one card per garment line */}
+            <ul className="divide-y divide-line border-t border-line md:hidden">
+              {order.items.map((it) => (
+                <li key={it.id} className="px-4 py-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">{it.name} <span className="font-normal text-muted">· {it.category}</span></p>
+                      <p className="mt-0.5 text-[12.5px] text-muted">
+                        {it.serviceName} · {it.quantity}{it.pricingModel === 'per_kg' ? ' kg' : ''} × {formatCurrency(it.unitPrice, { decimals: 0 })}
+                      </p>
+                    </div>
+                    <p className="shrink-0 font-bold tabular-nums text-ink">{formatCurrency(it.quantity * it.unitPrice, { decimals: 0 })}</p>
+                  </div>
+                  {it.instructions && <p className="mt-1.5 flex items-start gap-1 text-[12px] text-blue-700"><StickyNote size={12} className="mt-0.5 shrink-0" /> {it.instructions}</p>}
+                  {it.condition && <p className="mt-1 flex items-start gap-1 text-[12px] text-amber-700"><TriangleAlert size={12} className="mt-0.5 shrink-0" /> {it.condition}</p>}
+                  <div className="mt-2.5">
+                    {canUpdate && it.status !== 'delivered' ? (
+                      <span className={busyItem === it.id ? 'pointer-events-none opacity-50' : ''}>
+                        <GarmentStatusSelect item={it} canRevert={can('orders.cancel')} onChange={(s) => changeGarment(it, s)} />
+                      </span>
+                    ) : (
+                      <OrderStatusBadge status={cancelled ? 'cancelled' : it.status} />
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="scroll-thin hidden overflow-x-auto border-t border-line md:block">
               <table className="table-base">
                 <thead>
                   <tr>

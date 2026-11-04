@@ -100,6 +100,26 @@ export default function OrderTable({ rows, loading, table: externalTable, varian
       getRowLabel={(o) => `Open order ${o.id} for ${o.customer.name}`}
       rowClassName={(o) => (o.status === 'cancelled' ? 'opacity-60' : '')}
       empty={empty}
+      mobileCard={{
+        title: (o) => (hideCustomer ? <span className="font-mono text-[13.5px]">{o.id}</span> : o.customer.name),
+        subtitle: (o) => (
+          <>
+            {!hideCustomer && <span className="font-mono font-semibold text-slate-600">{o.id}</span>}
+            {!hideCustomer && ' · '}
+            {o.garmentCount} item{o.garmentCount === 1 ? '' : 's'}
+            {hideCustomer && o.serviceNames[0] ? ` · ${o.serviceNames[0]}` : ''}
+          </>
+        ),
+        meta: (o) => (
+          <>
+            {o.isOverdue ? <OverdueBadge /> : o.status !== 'delivered' && o.status !== 'cancelled' ? <span>Due {formatDate(o.dueAt)}, {formatTime(o.dueAt)}</span> : <span>{formatDate(o.receivedAt)}</span>}
+            {o.priority !== 'normal' && <PriorityBadge priority={o.priority} />}
+            {showFinance && o.balance > 0 && o.status !== 'cancelled' && <span className="font-semibold text-red-600">Bal. {formatCurrency(o.balance, { decimals: 0 })}</span>}
+          </>
+        ),
+        value: (o) => formatCurrency(o.total, { decimals: 0 }),
+        badge: (o) => <OrderStatusBadge status={o.status} size="sm" />,
+      }}
     />
   )
 }

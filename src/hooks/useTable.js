@@ -58,7 +58,7 @@ export function useTable(rows = [], { pageSize: initialPageSize = 10, initialSor
     })
 
   return {
-    sorted, pageRows, sort, toggleSort,
+    sorted, pageRows, sort, setSort, toggleSort,
     page: safePage, setPage, pageSize, setPageSize: (n) => { setPageSize(n); setPage(1) }, pageCount, total: sorted.length,
     selected, toggleRow, togglePage, allOnPageSelected, clearSelection: () => setSelected(new Set()),
   }

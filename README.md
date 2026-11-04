@@ -28,6 +28,24 @@ Staff added through **Staff Management** get the demo password `Welcome123!`.
 
 To restore the original sample data, go to **Settings → System → Reset demo data** (admin only).
 
+## Phones and tablets
+
+The system is built mobile-first and behaves like an app on phones (below 1024px wide):
+
+- **Bottom tab bar** — Home, Orders, a raised **+** for a new order, Customers, and **More**
+  (opens the full menu). Desktop keeps the sidebar.
+- **App-style top bar** — back button on detail screens, full-screen search, notifications.
+- **Lists become cards** — orders, customers, payments, expenses, inventory and staff show as
+  tappable cards with a "Sort by" picker instead of wide tables (`DataTable`'s `mobileCard` prop).
+- **Thumb-reach actions** — the order form has a sticky Save bar with the running total; order
+  details has a bottom bar with **Pay** and **Mark as …**. Dialogs open as bottom sheets.
+- **Install it like an app** — open the site in Chrome (Android) and choose *Add to Home screen* /
+  *Install app*, or in Safari (iPhone) use *Share → Add to Home Screen*. It opens full-screen with
+  its own icon, and keeps working without internet (the service worker in `public/sw.js` caches
+  the app; data is already stored on the device). Install/offline needs the production build
+  served over HTTPS (or `localhost`) — run `npm run build` and host `dist/`. The service worker is
+  not active during `npm run dev`.
+
 ## Stack
 
 React 19 · Vite · React Router 7 · Tailwind CSS 4 · lucide-react · Recharts · Sonner ·
@@ -49,12 +67,13 @@ src/
                    reportService, activityService, authService
     index.js       public API — UI imports only from here
   context/       AuthContext, SettingsContext, NotificationContext, SmsContext
-  hooks/         useAsync (loading/error + live refresh), useTable (sort/paginate/select), useDebounce
+  hooks/         useAsync (loading/error + live refresh), useTable (sort/paginate/select), useDebounce, useMediaQuery
   utils/         formatCurrency, formatDate, calculations, permissions, validators, pdf, exporters, print, dateRanges
   components/
     ui/          Button, Field/Input/Select/Textarea/Checkbox/Switch, Card, Modal/ConfirmDialog, Dropdown,
                  Tooltip, Tabs, Pagination, Skeleton, EmptyState, SearchInput, DataTable, Badge, Avatar
-    layout/      AppLayout, Sidebar (collapsible + mobile drawer), Topbar, GlobalSearch, PageHeader/Breadcrumbs
+    layout/      AppLayout, Sidebar (collapsible + mobile drawer), BottomNav (phone tab bar), Topbar, GlobalSearch,
+                 PageHeader/Breadcrumbs
     charts/      RevenueExpenseChart, VolumeBarChart, DonutChart, BarList
     orders/      OrderTable, GarmentRow, OrderProgress, UpdateStatusModal, useOrderActions
     customers/   CustomerPicker, CustomerFields, CustomerFormModal
@@ -120,3 +139,4 @@ in progress, overdue, etc. Every dashboard figure is calculated from these recor
 - Single-browser data: nothing is shared between devices or users until a backend is connected.
 - Dark mode is not implemented (the preference is shown as "planned").
 - Receipt printing uses the browser print dialog with print-only CSS (A5).
+- Selecting several orders for a bulk export is desktop-only; on phones, export uses the current filters.

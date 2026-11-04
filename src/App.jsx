@@ -8,6 +8,7 @@ import { GuestOnly, RequireAuth, RequirePermission } from './routes/guards'
 import { PageSkeleton } from './components/ui/Skeleton'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
+import { useMediaQuery } from './hooks/useMediaQuery'
 
 // Route-level code splitting keeps the initial bundle small.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -32,6 +33,7 @@ const guarded = (permission, element) => (
 )
 
 export default function App() {
+  const phone = useMediaQuery('(max-width: 639px)')
   return (
     <SettingsProvider>
       <AuthProvider>
@@ -59,7 +61,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
-        <Toaster position="top-right" richColors closeButton toastOptions={{ className: 'font-sans' }} />
+        <Toaster position={phone ? 'top-center' : 'top-right'} richColors closeButton={!phone} mobileOffset={{ top: 'calc(64px + env(safe-area-inset-top))', left: '12px', right: '12px' }} toastOptions={{ className: 'font-sans' }} />
       </AuthProvider>
     </SettingsProvider>
   )

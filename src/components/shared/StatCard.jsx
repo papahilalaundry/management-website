@@ -31,27 +31,27 @@ export default function StatCard({ label, value, icon: Icon, tone = 'blue', chan
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`card group relative flex flex-col overflow-hidden p-5 text-left transition-all ${onClick ? 'hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-pop/40' : ''}`}
+      className={`card group relative flex flex-col overflow-hidden p-3.5 text-left transition-all active:scale-[0.98] sm:p-5 sm:active:scale-100 ${onClick ? 'hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-pop/40' : ''}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[13px] font-semibold text-muted">{label}</p>
+        <p className="text-[12px] font-semibold leading-snug text-muted sm:text-[13px]">{label}</p>
         {Icon && (
-          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${t.icon}`}>
-            <Icon size={18} strokeWidth={2} aria-hidden />
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-9 sm:w-9 sm:rounded-xl ${t.icon}`}>
+            <Icon size={17} strokeWidth={2} aria-hidden />
           </span>
         )}
       </div>
-      <p className="mt-1 truncate text-2xl font-extrabold tracking-tight text-ink tabular-nums" title={String(value)}>{value}</p>
-      <div className="mt-2 flex items-center gap-2 text-xs">
+      <p className="mt-1 truncate text-[19px] font-extrabold tracking-tight text-ink tabular-nums sm:text-2xl" title={String(value)}>{value}</p>
+      <div className="mt-auto flex items-center gap-2 pt-2 text-xs">
         {hasChange && (
           <span className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 font-bold ${good ? 'bg-emerald-50 text-emerald-700' : bad ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
             <Arrow size={12} strokeWidth={2.5} aria-hidden />
             {Math.abs(change).toFixed(1)}%
           </span>
         )}
-        {hint && <span className="min-w-0 flex-1 truncate text-muted">{hint}</span>}
+        {hint && <span className="hidden min-w-0 flex-1 truncate text-muted sm:inline">{hint}</span>}
         {trend?.length > 1 && (
-          <div className="pointer-events-none ml-auto h-7 w-16 shrink-0" aria-hidden>
+          <div className="pointer-events-none ml-auto hidden h-7 w-16 shrink-0 sm:block" aria-hidden>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend.map((v, i) => ({ i, v }))} margin={{ top: 2, right: 0, left: 0, bottom: 2 }}>
                 <defs>
@@ -74,13 +74,13 @@ export default function StatCard({ label, value, icon: Icon, tone = 'blue', chan
 export function MiniStat({ label, value, icon: Icon, tone = 'blue', sub }) {
   const t = TONES[tone] ?? TONES.blue
   return (
-    <div className="card flex items-center gap-3.5 p-4">
+    <div className="card flex flex-col items-start gap-2 p-3.5 sm:flex-row sm:items-center sm:gap-3.5 sm:p-4">
       {Icon && (
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${t.icon}`}>
-          <Icon size={19} aria-hidden />
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10 sm:rounded-xl ${t.icon}`}>
+          <Icon size={18} aria-hidden />
         </span>
       )}
-      <div className="min-w-0">
+      <div className="w-full min-w-0">
         <p className="truncate text-xs font-semibold text-muted">{label}</p>
         <p className="truncate text-lg font-extrabold tracking-tight text-ink tabular-nums">{value}</p>
         {sub && <p className="truncate text-[11px] text-muted">{sub}</p>}

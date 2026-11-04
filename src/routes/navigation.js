@@ -37,6 +37,25 @@ export const NAV_SECTIONS = [
   },
 ]
 
+/**
+ * Mobile app shell helpers.
+ * Form screens hide the bottom tab bar (they have their own sticky save bar),
+ * and detail screens show a back button instead of the logo.
+ */
+export const isFormRoute = (path) => path === '/orders/new' || /^\/orders\/[^/]+\/edit$/.test(path)
+
+/** Screens with their own bottom action bar on phones (forms + order details). */
+export const hidesTabBar = (path) => isFormRoute(path) || /^\/orders\/[^/]+$/.test(path)
+
+export function parentPath(path) {
+  if (path === '/orders/new') return '/orders'
+  const edit = path.match(/^\/orders\/([^/]+)\/edit$/)
+  if (edit) return `/orders/${edit[1]}`
+  if (/^\/orders\/[^/]+$/.test(path)) return '/orders'
+  if (/^\/customers\/[^/]+$/.test(path)) return '/customers'
+  return null
+}
+
 /** Titles for the top bar, matched by path prefix. */
 export const PAGE_TITLES = [
   ['/orders/new', 'New Order'],

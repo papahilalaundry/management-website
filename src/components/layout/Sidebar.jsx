@@ -149,7 +149,7 @@ export default function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose
       {mobileOpen && (
         <div className="no-print fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation menu">
           <div className="absolute inset-0 animate-fade-in bg-navy-950/50" onClick={onMobileClose} aria-hidden />
-          <div className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] animate-slide-in-left shadow-pop">
+          <div className="absolute inset-y-0 left-0 w-[290px] max-w-[85vw] animate-slide-in-left bg-navy-900 pt-safe pb-safe shadow-pop">
             <SidebarContent collapsed={false} mobile onNavigate={onMobileClose} />
           </div>
         </div>

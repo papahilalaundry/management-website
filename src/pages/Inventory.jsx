@@ -250,7 +250,7 @@ export default function Inventory() {
     <div className="space-y-6">
       <PageHeader title="Inventory" description="Detergents, chemicals, packaging and supplies." actions={<Button icon={Plus} onClick={() => setModal({ kind: 'item' })}>Add item</Button>} />
 
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MiniStat label="Items tracked" value={formatNumber(stats.total)} icon={Boxes} tone="blue" />
         <MiniStat label="Low stock" value={formatNumber(stats.low)} icon={TriangleAlert} tone="amber" sub="At or below minimum" />
         <MiniStat label="Out of stock" value={formatNumber(stats.out)} icon={PackageX} tone="red" />
@@ -268,6 +268,20 @@ export default function Inventory() {
           </div>
           {error && !data ? <ErrorState error={error} onRetry={reload} /> : (
             <DataTable columns={columns} table={table} loading={loading && !data} onRowClick={(i) => setModal({ kind: 'history', item: i })} getRowLabel={(i) => `View history for ${i.name}`}
+              mobileCard={{
+                title: (i) => i.name,
+                subtitle: (i) => i.category,
+                meta: (i) => (
+                  <span className="flex w-full max-w-[180px] items-center gap-2">
+                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100" aria-hidden>
+                      <span className={`block h-full rounded-full ${i.status === 'out' ? 'bg-red-500' : i.status === 'low' ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, (i.stock / Math.max(1, i.minStock * 3)) * 100)}%` }} />
+                    </span>
+                    <span className="shrink-0 text-[11px]">min {formatNumber(i.minStock)}</span>
+                  </span>
+                ),
+                value: (i) => <>{formatNumber(i.stock)} <span className="text-xs font-medium text-muted">{i.unit}</span></>,
+                badge: (i) => <StockBadge status={i.status} />,
+              }}
               rowClassName={(i) => (i.status === 'out' ? 'bg-red-50/40' : '')}
               empty={<EmptyState icon={Package} title="No items found" description="Try a different filter or add a new item." />} />
           )}
