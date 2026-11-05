@@ -7,7 +7,7 @@
  * message; no money moves through this system.
  */
 import { orderBy, query, where } from 'firebase/firestore'
-import { allocate, bumpStats, col, countOf, db, docRef, fetchAll, fetchOne, fetchPage, sumOf, transact } from './storage'
+import { allocate, bumpStats, col, countOf, docRef, fetchAll, fetchOne, fetchPage, sumOf, transact } from './storage'
 import { request, notFound, validationError, ApiError } from './mockApi'
 import { customerAfter, enrichOrder, logActivity, nowIso, pushNotification, sendSimulatedSms, staffName } from './helpers'
 import { loadDailyStats, totalsBetween } from './stats'
@@ -46,7 +46,6 @@ export function writePayment(tx, { id, order, data, user }) {
     payerName: mpesa ? data.payerName.trim() : '',
     payerNameLower: mpesa ? data.payerName.trim().toLowerCase() : '',
     reference: mpesa ? (data.reference?.trim().toUpperCase() ?? '') : '',
-    accountNumber: data.method === 'paybill' ? (data.accountNumber?.trim() || db.get('settings').business?.paybillAccount?.trim() || order.id) : '',
     paidAt,
     recordedBy: user.id,
     notes: data.notes?.trim() ?? '',
@@ -152,7 +151,7 @@ export const paymentService = {
   },
 
   /**
-   * @param data { orderId, method: paybill|mpesa_number|cash, amount, expectedAmount, payerName, reference, accountNumber (Paybill), paidAt, notes }
+   * @param data { orderId, method: paybill|mpesa_number|cash, amount, expectedAmount, payerName, reference, paidAt, notes }
    */
   createPayment(data) {
     return request(async (user) => {

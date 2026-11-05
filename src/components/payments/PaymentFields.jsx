@@ -11,11 +11,10 @@ import { toInputDateTime } from '../../utils/formatDate'
  *
  * value:    state from emptyPayment()
  * onChange: (patch) => void
- * errors:   { method, expectedAmount, amount, payerName, reference, accountNumber, paidAt }
- * accountPlaceholder: what a blank Paybill account number will be saved as
+ * errors:   { method, expectedAmount, amount, payerName, reference, paidAt }
  * maxAmount: outstanding balance (amount paid cannot exceed it)
  */
-export default function PaymentFields({ value, onChange, errors = {}, maxAmount, amountDisabled = false, accountPlaceholder = 'the order number' }) {
+export default function PaymentFields({ value, onChange, errors = {}, maxAmount, amountDisabled = false }) {
   const mpesa = isMpesaMethod(value.method)
   const expected = Number(value.expectedAmount) || 0
   const paid = Number(value.amount) || 0
@@ -44,11 +43,6 @@ export default function PaymentFields({ value, onChange, errors = {}, maxAmount,
           <Field label="M-Pesa code" optional error={errors.reference}>
             {(p) => <Input {...p} value={value.reference} maxLength={10} className="font-mono uppercase" onChange={(e) => onChange({ reference: e.target.value.toUpperCase() })} placeholder="e.g. TKD4H7J2LQ" />}
           </Field>
-          {value.method === 'paybill' && (
-            <Field label="Account number" optional error={errors.accountNumber} hint={`The account the client entered on Paybill. Blank = ${accountPlaceholder}.`} className="sm:col-span-2">
-              {(p) => <Input {...p} value={value.accountNumber ?? ''} maxLength={30} className="font-mono" autoComplete="off" onChange={(e) => onChange({ accountNumber: e.target.value })} placeholder={accountPlaceholder} />}
-            </Field>
-          )}
         </>
       )}
       <Field label="Date of payment" required error={errors.paidAt} className={mpesa ? 'sm:col-span-2' : ''}>

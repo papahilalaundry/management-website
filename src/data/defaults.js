@@ -10,7 +10,7 @@ export const DEFAULT_SETTINGS = {
     currency: 'KES',
     kraPin: '',
     paybillNumber: '', // shown on receipts so clients know where to pay
-    paybillAccount: '', // fixed Paybill account number (e.g. bank Paybills); blank = clients use the order number
+    paybillAccount: '', // Paybill account number shown on receipts; blank = clients use the order number
     mpesaNumber: '',
     receiptFooter: 'Thank you for choosing Papa Hila Laundry!',
   },

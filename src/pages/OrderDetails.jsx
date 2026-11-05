@@ -496,12 +496,11 @@ export default function OrderDetails() {
                           </div>
                           <MethodBadge method={p.method} />
                         </div>
-                        {(p.payerName || p.reference || p.accountNumber) && (
+                        {(p.payerName || p.reference) && (
                           <p className="mt-1 truncate text-[11.5px] text-slate-600">
                             {p.payerName && <>From <span className="font-semibold">{p.payerName}</span></>}
                             {p.payerName && p.reference && ' · '}
                             {p.reference && <span className="font-mono">{p.reference}</span>}
-                            {p.accountNumber && <>{(p.payerName || p.reference) && ' · '}Account <span className="font-mono">{p.accountNumber}</span></>}
                           </p>
                         )}
                         <p className="mt-0.5 text-[11px] text-slate-400">Recorded by {p.recordedByName} · {p.id}</p>

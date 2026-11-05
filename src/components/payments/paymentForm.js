@@ -8,7 +8,6 @@ export const emptyPayment = (expected = '') => ({
   amount: '',
   payerName: '',
   reference: '',
-  accountNumber: '',
   paidAt: toInputDateTime(new Date()),
 })
 
@@ -19,6 +18,5 @@ export const paymentPayload = (p) => ({
   amount: Number(p.amount),
   payerName: isMpesaMethod(p.method) ? p.payerName : '',
   reference: isMpesaMethod(p.method) ? p.reference : '',
-  accountNumber: p.method === 'paybill' ? (p.accountNumber ?? '').trim() : '',
   paidAt: p.paidAt ? new Date(p.paidAt).toISOString() : new Date().toISOString(),
 })

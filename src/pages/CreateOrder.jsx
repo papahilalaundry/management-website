@@ -34,7 +34,7 @@ import { displayPhone, hasErrors, isValidMpesaRef, validateCustomer } from '../u
 let keySeq = 0
 const newItem = (name = 'Shirt', category = 'Clothing') => ({ key: `k${++keySeq}`, category, name, quantity: 1, instructions: '', condition: '', showNotes: false })
 const QUICK_ADD = [['Trousers', 'Clothing'], ['T-shirt', 'Clothing'], ['Shirt', 'Clothing'], ['Bedsheet', 'Household'], ['Towel', 'Household'], ['Mixed load', 'Household']]
-const PAYMENT_KEYS = ['method', 'expectedAmount', 'amount', 'payerName', 'reference', 'accountNumber', 'paidAt']
+const PAYMENT_KEYS = ['method', 'expectedAmount', 'amount', 'payerName', 'reference', 'paidAt']
 const newLine = (service) => ({ key: `s${++keySeq}`, serviceId: service?.id ?? '', quantity: '', unitPrice: service ? String(service.price) : '', notes: '', showNotes: false })
 
 /**
@@ -499,7 +499,7 @@ export default function CreateOrder() {
               </div>
               {payment && (
                 <div className="animate-fade-in">
-                  <PaymentFields value={payment} onChange={setPayment} errors={paymentErrors} maxAmount={totals.total} amountDisabled={form.payOption === 'full'} accountPlaceholder={settings.business?.paybillAccount || 'the new order number'} />
+                  <PaymentFields value={payment} onChange={setPayment} errors={paymentErrors} maxAmount={totals.total} amountDisabled={form.payOption === 'full'} />
                 </div>
               )}
             </Section>

@@ -114,7 +114,7 @@ function buildTimeline(order, payments) {
     events.push({ id: `stage-${stage}`, type: 'status', status: stage, message: `Status changed to ${stageLabel(stage)}`, note: s.note, at: s.at, by: s.by, byName: staffName(s.by) })
   })
   payments.forEach((p) =>
-    events.push({ id: p.id, type: 'payment', message: `Payment of ${formatCurrency(p.amount)} via ${methodLabel(p.method)}${p.payerName ? ` from ${p.payerName}` : ''}${p.reference ? ` (${p.reference})` : ''}${p.accountNumber ? `, account ${p.accountNumber}` : ''}`, at: p.paidAt, by: p.recordedBy, byName: staffName(p.recordedBy) }),
+    events.push({ id: p.id, type: 'payment', message: `Payment of ${formatCurrency(p.amount)} via ${methodLabel(p.method)}${p.payerName ? ` from ${p.payerName}` : ''}${p.reference ? ` (${p.reference})` : ''}`, at: p.paidAt, by: p.recordedBy, byName: staffName(p.recordedBy) }),
   )
   if (order.feedback) events.push({ id: 'feedback', type: 'feedback', message: `Client feedback recorded${order.feedback.rating ? ` (${order.feedback.rating}/5)` : ''}`, note: order.feedback.comment, at: order.feedback.at, by: order.feedback.by, byName: staffName(order.feedback.by) })
   return events.sort((a, b) => b.at.localeCompare(a.at))
@@ -263,7 +263,7 @@ export const orderService = {
    * data: { customerId, lines[{ serviceId, quantity, unitPrice (only used if the service allows it), notes }],
    *         items[{category,name,quantity,instructions,condition}] (optional garment/item list),
    *         priority, receivedAt, dueAt, pickupAt, deliveryAt, assignedTo, extraCharges, discount, notes,
-   *         payment?: { method, amount, expectedAmount, payerName, reference, accountNumber, paidAt } }
+   *         payment?: { method, amount, expectedAmount, payerName, reference, paidAt } }
    */
   createOrder(data) {
     return request(async (user) => {

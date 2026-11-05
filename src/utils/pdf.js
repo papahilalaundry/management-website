@@ -115,7 +115,7 @@ export async function downloadOrderReceiptPdf(order, business) {
     autoTable(doc, {
       startY: y,
       head: [['Paid on', 'Mode', 'Paid by / M-Pesa code', 'Amount']],
-      body: order.payments.map((p) => [formatDate(p.paidAt), methodLabel(p.method), safe([p.payerName, p.reference, p.accountNumber && `Acc ${p.accountNumber}`].filter(Boolean).join(' | ') || '-'), formatCurrency(p.amount)]),
+      body: order.payments.map((p) => [formatDate(p.paidAt), methodLabel(p.method), safe([p.payerName, p.reference].filter(Boolean).join(' | ') || '-'), formatCurrency(p.amount)]),
       headStyles: { fillColor: [100, 116, 139], fontSize: 7.5 },
       styles: { fontSize: 7.5, cellPadding: 1.6 },
       columnStyles: { 3: { halign: 'right' } },
@@ -194,7 +194,6 @@ export async function downloadPaymentReceiptPdf(payment, order, business) {
     ['Date of payment', formatDateTime(payment.paidAt)],
     ['Mode of payment', methodLabel(payment.method)],
     ...(isMpesaMethod(payment.method) ? [['Paid by (M-Pesa name)', payment.payerName || '-'], ['M-Pesa code', payment.reference || '-']] : []),
-    ...(payment.accountNumber ? [['Paybill account', payment.accountNumber]] : []),
     ['Received by', payment.recordedByName],
     ...(payment.expectedAmount != null ? [['Estimated amount', formatCurrency(payment.expectedAmount)]] : []),
     ['Amount paid', formatCurrency(payment.amount)],

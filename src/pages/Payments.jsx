@@ -39,7 +39,6 @@ const EXPORT_COLUMNS = [
   { header: 'Paid (KES)', value: (p) => p.amount },
   { header: 'Difference (KES)', value: (p) => shortfall(p) || '' },
   { header: 'M-Pesa code', value: (p) => p.reference },
-  { header: 'Paybill account', value: (p) => p.accountNumber ?? '' },
   { header: 'Recorded by', value: (p) => p.recordedByName },
 ]
 const WATCH = ['payments']
@@ -95,7 +94,7 @@ export default function Payments() {
     { key: 'expectedAmount', header: 'Estimated', align: 'right', hideBelow: 'xl', render: (p) => <span className="text-slate-500">{p.expectedAmount != null ? formatCurrency(p.expectedAmount) : '—'}</span> },
     { key: 'amount', header: 'Paid', align: 'right', render: (p) => <span className="font-bold text-ink">{formatCurrency(p.amount)}</span> },
     { key: 'difference', header: 'Difference', align: 'right', hideBelow: 'xl', render: (p) => (shortfall(p) ? <span className="font-semibold text-amber-700">−{formatCurrency(shortfall(p))}</span> : <span className="text-slate-300">—</span>) },
-    { key: 'reference', header: 'M-Pesa code / account', hideBelow: 'xl', render: (p) => <div className="font-mono text-xs text-slate-500"><p>{p.reference || '—'}</p>{p.accountNumber && <p className="text-[11px] text-slate-400">Acc {p.accountNumber}</p>}</div> },
+    { key: 'reference', header: 'M-Pesa code', hideBelow: 'xl', render: (p) => <span className="font-mono text-xs text-slate-500">{p.reference || '—'}</span> },
     { key: 'recordedByName', header: 'Recorded by', hideBelow: 'lg', render: (p) => <span className="text-slate-600">{p.recordedByName}</span> },
     {
       key: 'actions', header: <span className="sr-only">Actions</span>, align: 'right',
@@ -159,7 +158,6 @@ export default function Payments() {
                 <>
                   {p.payerName && <span>From {p.payerName}</span>}
                   {p.reference && <span className="font-mono">{p.reference}</span>}
-                  {p.accountNumber && <span className="font-mono">Acc {p.accountNumber}</span>}
                   {shortfall(p) > 0 && <span className="text-amber-700">{formatCurrency(shortfall(p), { decimals: 0 })} below estimate</span>}
                 </>
               ),
