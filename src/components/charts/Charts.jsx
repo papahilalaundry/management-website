@@ -8,6 +8,7 @@ import {
 } from 'recharts'
 import { SERIES } from './chartTheme'
 import AnimatedValue from '../ui/AnimatedValue'
+import { BarChart3 } from 'lucide-react'
 import { formatCompactCurrency, formatCurrency, formatNumber } from '../../utils/formatCurrency'
 
 const AXIS = { fontSize: 11, fill: '#64748b' }
@@ -48,6 +49,19 @@ export function Legend({ items }) {
   )
 }
 
+/** Shown in place of a chart when every value is zero. */
+export function ChartEmpty({ height = 220, title = 'No data yet', description = 'This chart fills in as orders and payments are recorded.' }) {
+  return (
+    <div style={{ height }} className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line bg-slate-50/60 px-6 text-center">
+      <BarChart3 size={22} className="text-slate-300" aria-hidden />
+      <p className="text-[13px] font-semibold text-slate-600">{title}</p>
+      <p className="max-w-xs text-xs text-muted">{description}</p>
+    </div>
+  )
+}
+
+const allZero = (data, keys) => !data.length || data.every((d) => keys.every((k) => !Number(d[k])))
+
 /** Direct label at the final point of a line (identity never by colour alone). */
 const endLabel = (text, color, count) =>
   function EndLabel({ x, y, index }) {
@@ -61,6 +75,7 @@ const endLabel = (text, color, count) =>
 
 /** Revenue vs expenses over time (same unit → one axis). */
 export function RevenueExpenseChart({ data, height = 300, xKey = 'short' }) {
+  if (allZero(data, ['revenue', 'expenses'])) return <ChartEmpty height={height} description="Revenue and expenses appear here once payments or expenses are recorded." />
   const n = data.length
   return (
     <div style={{ height }} role="img" aria-label="Line chart of revenue and expenses over time">
@@ -80,6 +95,7 @@ export function RevenueExpenseChart({ data, height = 300, xKey = 'short' }) {
 
 /** Single-series bar chart (orders or kg per day/week/month). `unit` (e.g. 'kg') allows decimals and labels the tooltip. */
 export function VolumeBarChart({ data, dataKey = 'orders', name = 'Orders', height = 260, xKey = 'short', money = false, color = SERIES.orders.color, unit = '' }) {
+  if (allZero(data, [dataKey])) return <ChartEmpty height={height} description={`${name} appear here once orders are recorded for this period.`} />
   return (
     <div style={{ height }} role="img" aria-label={`Bar chart of ${name.toLowerCase()} over time`}>
       <ResponsiveContainer width="100%" height="100%">
@@ -99,8 +115,9 @@ export function VolumeBarChart({ data, dataKey = 'orders', name = 'Orders', heig
  * Donut with a labelled legend (counts + %), so identity and value never
  * depend on colour alone. data: [{ label, count, color }]
  */
-export function DonutChart({ data, total, centerLabel = 'Total', height = 220, valueFormatter = formatNumber }) {
+export function DonutChart({ data, total, centerLabel = 'Total', height = 220, valueFormatter = formatNumber, emptyText = 'Nothing to show yet.' }) {
   const sum = total ?? data.reduce((s, d) => s + d.count, 0)
+  if (!sum) return <ChartEmpty height={height} description={emptyText} />
   const visible = data.filter((d) => d.count > 0)
   return (
     <div className="flex flex-col items-center gap-5 sm:flex-row xl:flex-col 2xl:flex-row">

@@ -187,7 +187,7 @@ export default function Dashboard() {
                 {!d ? (
                   <Skeleton className="h-[220px] w-full" />
                 ) : (
-                  <DonutChart data={d.statusDistribution.map((x) => ({ label: x.label, count: x.count, color: STATUS_META[x.status].color }))} centerLabel="orders" height={180} />
+                  <DonutChart data={d.statusDistribution.map((x) => ({ label: x.label, count: x.count, color: STATUS_META[x.status].color }))} centerLabel="orders" height={180} emptyText="No orders in progress right now." />
                 )}
               </CardBody>
             </Card>
@@ -211,6 +211,7 @@ export default function Dashboard() {
                       centerLabel="received"
                       height={170}
                       valueFormatter={(v) => formatCompactCurrency(v)}
+                      emptyText="No payments received in this period."
                     />
                   )}
                 </CardBody>

@@ -100,7 +100,7 @@ export const reportService = {
       const cur = totalsBetween(days, isoOf(r.from), isoOf(r.to))
       const before = totalsBetween(days, isoOf(prev.from), isoOf(prev.to))
       const spark = sparkSeries(days, r.from, r.to)
-      const stat = (k, value = cur[k]) => ({ value, previous: before[k], change: percentChange(value, before[k]), trend: spark.map((s) => s[k]) })
+      const stat = (k, value = cur[k]) => ({ value, previous: before[k], change: value || before[k] ? percentChange(value, before[k]) : null, trend: value || before[k] ? spark.map((s) => s[k]) : [] })
       const live = (value) => ({ value, previous: null, change: null, trend: [] })
 
       const stats = {
