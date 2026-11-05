@@ -205,7 +205,7 @@ export default function CustomerDetails() {
                               <td className="text-slate-600">{p.payerName || '—'}</td>
                               <td className="text-right tabular-nums text-slate-500">{p.expectedAmount != null ? formatCurrency(p.expectedAmount) : '—'}</td>
                               <td className={`text-right font-semibold tabular-nums ${short ? 'text-amber-700' : ''}`}>{formatCurrency(p.amount)}</td>
-                              <td className="font-mono text-xs text-slate-500">{p.reference || '—'}</td>
+                              <td className="font-mono text-xs text-slate-500">{p.reference || '—'}{p.accountNumber && <span className="block text-[11px] text-slate-400">Acc {p.accountNumber}</span>}</td>
                               <td className="text-slate-600">{p.recordedByName}</td>
                             </tr>
                           )

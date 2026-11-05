@@ -35,7 +35,7 @@ const Row = ({ label, value, strong, tone }) => (
 /** "Pay via Paybill 123456 (Account: PHL-10001) · M-Pesa 0712…" lines, when configured in Settings. */
 function payInstructions(business, orderId) {
   const lines = []
-  if (business?.paybillNumber) lines.push(`Pay via M-Pesa Paybill ${business.paybillNumber}, Account: ${orderId}`)
+  if (business?.paybillNumber) lines.push(`Pay via M-Pesa Paybill ${business.paybillNumber}, Account: ${business.paybillAccount || orderId}`)
   if (business?.mpesaNumber) lines.push(`Or send money to M-Pesa ${business.mpesaNumber}`)
   return lines
 }
@@ -124,7 +124,7 @@ export function OrderReceipt({ order, business }) {
             {order.payments.map((p) => (
               <li key={p.id} className="flex justify-between gap-3">
                 <span className="text-slate-600">
-                  {formatDate(p.paidAt)} · {methodLabel(p.method)}{p.payerName ? ` · ${p.payerName}` : ''}{p.reference ? ` · ${p.reference}` : ''}
+                  {formatDate(p.paidAt)} · {methodLabel(p.method)}{p.payerName ? ` · ${p.payerName}` : ''}{p.reference ? ` · ${p.reference}` : ''}{p.accountNumber ? ` · Acc ${p.accountNumber}` : ''}
                 </span>
                 <span className="font-semibold tabular-nums">{formatCurrency(p.amount)}</span>
               </li>
@@ -167,6 +167,7 @@ export function PaymentReceipt({ payment, order, business }) {
         <p className="text-slate-500">Mode of payment</p><p className="text-right">{methodLabel(payment.method)}</p>
         {mpesa && (<><p className="text-slate-500">Paid by (M-Pesa name)</p><p className="text-right font-semibold">{payment.payerName || '—'}</p></>)}
         {mpesa && (<><p className="text-slate-500">M-Pesa code</p><p className="text-right font-mono">{payment.reference || '—'}</p></>)}
+        {payment.accountNumber && (<><p className="text-slate-500">Paybill account</p><p className="text-right font-mono">{payment.accountNumber}</p></>)}
         <p className="text-slate-500">Received by</p><p className="text-right">{payment.recordedByName}</p>
       </div>
       <div className="mt-4 space-y-1 border-t border-dashed border-slate-300 pt-3">

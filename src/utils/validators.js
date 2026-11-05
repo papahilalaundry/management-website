@@ -63,6 +63,7 @@ export function validatePayment(data, { outstanding } = {}) {
   if (isMpesaMethod(data.method) && !data.payerName?.trim()) e.payerName = 'Enter the name shown on the M-Pesa message'
   if (isMpesaMethod(data.method) && data.reference?.trim() && !isValidMpesaRef(data.reference))
     e.reference = 'M-Pesa codes are 10 letters/digits, e.g. SKD4H7J2LQ'
+  if (data.method === 'paybill' && data.accountNumber && String(data.accountNumber).trim().length > 30) e.accountNumber = 'Account numbers are at most 30 characters'
   if (!data.paidAt) e.paidAt = 'Payment date is required'
   else if (new Date(data.paidAt).getTime() > Date.now() + 5 * 60e3) e.paidAt = 'Payment date cannot be in the future'
   return e

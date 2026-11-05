@@ -10,6 +10,7 @@ import { emptyPayment, paymentPayload } from './paymentForm'
 import ReceiptModal from '../receipts/ReceiptModal'
 import { paymentService } from '../../services'
 import { useSms } from '../../context/SmsContext'
+import { useSettings } from '../../context/SettingsContext'
 import { formatCurrency } from '../../utils/formatCurrency'
 import { formatDate } from '../../utils/formatDate'
 import { methodLabel } from '../../data/constants'
@@ -30,6 +31,7 @@ const emptyForm = (order) => ({
  */
 export default function RecordPaymentModal({ open, onClose, order: fixedOrder, customer: presetCustomer, onRecorded }) {
   const { notifySms } = useSms()
+  const settings = useSettings()
   const [customer, setCustomer] = useState(null)
   const [payable, setPayable] = useState({ customerId: null, list: [] })
   const [form, setForm] = useState(() => emptyForm(fixedOrder))
@@ -118,6 +120,7 @@ export default function RecordPaymentModal({ open, onClose, order: fixedOrder, c
               <div className="flex justify-between font-bold"><span>Remaining balance</span><span className="tabular-nums">{formatCurrency(p.balanceAfter)}</span></div>
             </div>
             {p.reference && <p className="mt-3 text-[11px] text-muted">M-Pesa code <span className="font-mono font-semibold">{p.reference}</span></p>}
+            {p.accountNumber && <p className="mt-1 text-[11px] text-muted">Paybill account <span className="font-mono font-semibold">{p.accountNumber}</span></p>}
           </div>
         </Modal>
         <ReceiptModal open={open && showReceipt} onClose={() => { setShowReceipt(false); onClose() }} type="payment" payment={p} />
@@ -179,7 +182,7 @@ export default function RecordPaymentModal({ open, onClose, order: fixedOrder, c
           </div>
         )}
 
-        <PaymentFields value={form} onChange={patch} errors={errors} maxAmount={order?.balance} />
+        <PaymentFields value={form} onChange={patch} errors={errors} maxAmount={order?.balance} accountPlaceholder={settings.business?.paybillAccount || order?.id || 'the order number'} />
         {order && (
           <div className="-mt-1 flex flex-wrap items-center gap-1.5">
             <button type="button" onClick={() => patch({ amount: String(order.balance) })} className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200">Full balance</button>

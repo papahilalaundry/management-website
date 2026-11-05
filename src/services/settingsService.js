@@ -17,6 +17,7 @@ function validateSection(section, values) {
     if (!values.name?.trim()) e.name = 'Business name is required'
     if (values.email && !isValidEmail(values.email)) e.email = 'Enter a valid email'
     if (values.paybillNumber && !/^\d{5,7}$/.test(String(values.paybillNumber).trim())) e.paybillNumber = 'Paybill numbers are 5–7 digits'
+    if (values.paybillAccount && String(values.paybillAccount).trim().length > 30) e.paybillAccount = 'Account numbers are at most 30 characters'
   }
   if (section === 'pricing') {
     for (const k of ['taxRate', 'expressSurcharge', 'urgentSurcharge']) {
