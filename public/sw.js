@@ -6,7 +6,7 @@
  * Bump CACHE when this file's caching strategy changes. Built assets are
  * content-hashed, so normal deploys do not need a bump.
  */
-const CACHE = 'phl-shell-v1'
+const CACHE = 'phl-shell-v2'
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg', '/icons/icon-192.png', '/icons/icon-512.png']
 
 self.addEventListener('install', (event) => {
