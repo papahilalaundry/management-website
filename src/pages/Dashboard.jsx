@@ -67,7 +67,7 @@ function ScheduleList({ items }) {
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${m.cls}`}><m.icon size={16} aria-hidden /></span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-ink">{order.customer.name}</p>
-                <p className="truncate text-xs text-muted">{m.label} · {order.id} · {order.weightKg} kg · {formatTime(at)}</p>
+                <p className="truncate text-xs text-muted">{m.label} · {order.id} · {order.serviceSummary || order.serviceNames?.join(', ')} · {formatTime(at)}</p>
               </div>
               <OrderStatusBadge status={order.status} size="sm" />
             </Link>
@@ -264,7 +264,7 @@ export default function Dashboard() {
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600"><TriangleAlert size={16} aria-hidden /></span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[13px] font-semibold text-ink">{o.id} · {o.customer.name}</p>
-                            <p className="truncate text-xs text-red-600">Due {timeAgo(o.dueAt)} · {o.weightKg} kg · {o.assignedName}</p>
+                            <p className="truncate text-xs text-red-600">Due {timeAgo(o.dueAt)} · {o.serviceNames?.join(', ')} · {o.assignedName}</p>
                           </div>
                           <OrderStatusBadge status={o.status} size="sm" />
                         </Link>

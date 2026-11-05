@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { addDays, addHours, setHours, setMinutes } from 'date-fns'
 import {
-  CalendarDays, CircleAlert, ClipboardList, Plus, Printer, Save, Scale, Shirt, User, UserPlus, Wallet, Calculator, Zap, X,
+  CalendarDays, CircleAlert, ClipboardList, Layers, ListPlus, Plus, Printer, Save, Shirt, User, UserPlus, Wallet, Calculator, Zap, X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { catalogService, customerService, orderService, staffService } from '../services'
@@ -21,11 +21,12 @@ import Avatar from '../components/ui/Avatar'
 import CustomerPicker from '../components/customers/CustomerPicker'
 import CustomerFields from '../components/customers/CustomerFields'
 import GarmentRow from '../components/orders/GarmentRow'
+import ServiceLineRow from '../components/orders/ServiceLineRow'
 import PaymentFields from '../components/payments/PaymentFields'
 import { emptyPayment, paymentPayload } from '../components/payments/paymentForm'
 import { ClientTypeBadge } from '../components/shared/StatusBadges'
-import { isMpesaMethod, PRIORITIES } from '../data/constants'
-import { calcOrderTotals, garmentCount as countGarments } from '../utils/calculations'
+import { formatQuantity, isMpesaMethod, pricingUnitMeta, PRIORITIES, unitLabel } from '../data/constants'
+import { calcOrderTotals, garmentCount as countGarments, lineTotal } from '../utils/calculations'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDateTime, toInputDateTime } from '../utils/formatDate'
 import { displayPhone, hasErrors, isValidMpesaRef, validateCustomer } from '../utils/validators'
@@ -34,6 +35,24 @@ let keySeq = 0
 const newItem = (name = 'Shirt', category = 'Clothing') => ({ key: `k${++keySeq}`, category, name, quantity: 1, instructions: '', condition: '', showNotes: false })
 const QUICK_ADD = [['Trousers', 'Clothing'], ['T-shirt', 'Clothing'], ['Shirt', 'Clothing'], ['Bedsheet', 'Household'], ['Towel', 'Household'], ['Mixed load', 'Household']]
 const PAYMENT_KEYS = ['method', 'expectedAmount', 'amount', 'payerName', 'reference', 'paidAt']
+const newLine = (service) => ({ key: `s${++keySeq}`, serviceId: service?.id ?? '', quantity: '', unitPrice: service ? String(service.price) : '', notes: '', showNotes: false })
+
+/**
+ * What a form line is charged at: the service's unit and price, except that an
+ * existing order keeps its agreed price (unless the service lets staff set it).
+ */
+function effectiveLine(line, services, storedLines = []) {
+  const svc = services.find((s) => s.id === line.serviceId)
+  if (!svc) return null
+  const stored = storedLines.find((l) => l.id && l.id === line.id && l.serviceId === svc.id)
+  return {
+    unit: svc.unit,
+    unitLabel: svc.unitLabel ?? '',
+    quantity: Number(line.quantity) || 0,
+    unitPrice: svc.priceEditable ? Number(line.unitPrice) || 0 : stored ? stored.unitPrice : svc.price,
+    minCharge: stored ? stored.minCharge ?? 0 : svc.minCharge ?? 0,
+  }
+}
 
 function dueFor(priority, from = new Date()) {
   if (priority === 'urgent') return addHours(from, 6)
@@ -68,15 +87,21 @@ function SummaryRow({ label, value, strong, tone }) {
 }
 
 /** Client-side mirror of the server validation for instant feedback. */
-function validate(form, totals, payment) {
+function validate(form, totals, payment, services) {
   const e = {}
   if (!form.customer && !form.newCustomer) e.customerId = 'Select an existing customer or register a new one'
   if (form.newCustomer) Object.entries(validateCustomer(form.newCustomer)).forEach(([k, v]) => (e[`customer.${k}`] = v))
-  if (!form.serviceId) e.serviceId = 'Select a service'
-  const kg = Number(form.weightKg)
-  if (form.weightKg === '' || !(kg > 0)) e.weightKg = 'Enter the laundry weight in kg'
-  else if (kg > 500) e.weightKg = 'That weight looks too large — check the scale reading'
-  if (!form.items.length) e.items = 'List at least one garment (use "Mixed load" if not counted)'
+  if (!form.lines.length) e.lines = 'Add at least one service'
+  form.lines.forEach((l, i) => {
+    const svc = services.find((s) => s.id === l.serviceId)
+    if (!svc) { e[`lines.${i}.serviceId`] = 'Select a service'; return }
+    const meta = pricingUnitMeta(svc.unit)
+    const q = Number(l.quantity)
+    if (l.quantity === '' || !(q > 0)) e[`lines.${i}.quantity`] = `Enter the quantity (${unitLabel(svc)})`
+    else if (!meta.decimals && !Number.isInteger(q)) e[`lines.${i}.quantity`] = `Whole ${meta.plural} only`
+    else if (svc.unit === 'kg' && q > 500) e[`lines.${i}.quantity`] = 'That weight looks too large'
+    if (svc.priceEditable && (l.unitPrice === '' || Number(l.unitPrice) < 0)) e[`lines.${i}.unitPrice`] = 'Enter the agreed price'
+  })
   form.items.forEach((it, i) => {
     if (!it.name?.trim()) e[`items.${i}.name`] = 'Garment name is required'
     const q = Number(it.quantity)
@@ -129,13 +154,14 @@ export default function CreateOrder() {
   if (boot.data && !form) {
     const { services, order, presetCustomer, staff } = boot.data
     const now = new Date()
-    const defaultService = services.find((s) => s.active !== false)?.id ?? ''
+    const active = services.filter((s) => s.active !== false)
+    const defaultService = active.find((s) => s.unit === 'kg') ?? active[0]
     if (order) {
       setForm({
         customer: order.customer,
         newCustomer: null,
-        serviceId: order.serviceId,
-        weightKg: String(order.weightKg ?? ''),
+        lines: order.lines.map((l) => ({ key: l.id, id: l.id, serviceId: l.serviceId, quantity: String(l.quantity), unitPrice: String(l.unitPrice), notes: l.notes ?? '', showNotes: !!l.notes })),
+        showItems: order.items.length > 0,
         items: order.items.map((it) => ({ ...it, key: it.id, showNotes: !!(it.instructions || it.condition) })),
         receivedAt: toInputDateTime(order.receivedAt),
         dueAt: toInputDateTime(order.dueAt),
@@ -154,9 +180,9 @@ export default function CreateOrder() {
       setForm({
         customer: presetCustomer ? { id: presetCustomer.id, name: presetCustomer.name, phone: presetCustomer.phone, email: presetCustomer.email, address: presetCustomer.address, clientType: presetCustomer.clientType } : null,
         newCustomer: null,
-        serviceId: defaultService,
-        weightKg: '',
-        items: [newItem()],
+        lines: [newLine(defaultService)],
+        showItems: false,
+        items: defaultService?.trackItems ? [newItem()] : [],
         receivedAt: toInputDateTime(now),
         dueAt: toInputDateTime(dueFor('normal', now)),
         pickupAt: '',
@@ -173,14 +199,15 @@ export default function CreateOrder() {
     }
   }
 
-  const service = form && boot.data?.services.find((s) => s.id === form.serviceId)
   const editing = boot.data?.order
-  // The agreed rate stays on an existing order unless its service changes.
-  const ratePerKg = form ? (isEdit && editing && form.serviceId === editing.serviceId ? editing.ratePerKg : service?.price ?? 0) : 0
-
+  const allServices = boot.data?.services
+  const effective = useMemo(
+    () => (form && allServices ? form.lines.map((l) => effectiveLine(l, allServices, editing?.lines)) : []),
+    [form, allServices, editing],
+  )
   const totals = useMemo(
-    () => (form ? calcOrderTotals({ weightKg: form.weightKg, ratePerKg, priority: form.priority, extraCharges: form.extraCharges, discount: form.discount, taxRate: isEdit ? editing?.taxRate : settings.pricing.taxRate }, settings.pricing) : null),
-    [form, ratePerKg, settings.pricing, isEdit, editing],
+    () => (form ? calcOrderTotals({ lines: effective.filter(Boolean), priority: form.priority, extraCharges: form.extraCharges, discount: form.discount, taxRate: isEdit ? editing?.taxRate : settings.pricing.taxRate }, settings.pricing) : null),
+    [form, effective, settings.pricing, isEdit, editing],
   )
 
   if (boot.error) return <Card><ErrorState error={boot.error} onRetry={boot.reload} /></Card>
@@ -200,6 +227,12 @@ export default function CreateOrder() {
     setForm((f) => ({ ...f, items }))
     setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !k.startsWith(`items.${i}.`) && k !== 'items')))
   }
+  const setLine = (i, line) => {
+    const lines = form.lines.map((x, idx) => (idx === i ? line : x))
+    setForm((f) => ({ ...f, lines }))
+    setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !k.startsWith(`lines.${i}.`) && k !== 'lines')))
+  }
+  const addLine = (service) => set({ lines: [...form.lines, newLine(service)], ...(service?.trackItems && !form.items.length ? { items: [newItem()] } : {}) })
   const setPayment = (patch) => {
     setForm((f) => ({ ...f, payment: { ...f.payment, ...patch }, expectedTouched: f.expectedTouched || 'expectedAmount' in patch }))
     setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !Object.keys(patch).some((p) => k === `payment.${p}`))))
@@ -218,7 +251,7 @@ export default function CreateOrder() {
   const paymentErrors = Object.fromEntries(PAYMENT_KEYS.map((k) => [k, errors[`payment.${k}`]]))
 
   const submit = async (mode) => {
-    const v = validate(form, totals, payment)
+    const v = validate(form, totals, payment, services)
     setErrors(v)
     if (hasErrors(v)) {
       toast.error('Please fix the highlighted fields before saving.')
@@ -240,8 +273,7 @@ export default function CreateOrder() {
       }
       const payload = {
         customerId: customer.id,
-        serviceId: form.serviceId,
-        weightKg: Number(form.weightKg),
+        lines: form.lines.map(({ id, serviceId, quantity, unitPrice, notes }) => ({ id, serviceId, quantity: Number(quantity), unitPrice: unitPrice === '' ? undefined : Number(unitPrice), notes })),
         items: form.items.map(({ id, category, name, quantity, instructions, condition }) => ({ id, category, name, quantity: Number(quantity), instructions, condition })),
         receivedAt: new Date(form.receivedAt).toISOString(),
         dueAt: new Date(form.dueAt).toISOString(),
@@ -260,7 +292,7 @@ export default function CreateOrder() {
         navigate(`/orders/${res.order.id}${mode === 'print' ? '?print=1' : ''}`, { replace: true })
       } else {
         const res = await orderService.createOrder(payload)
-        toast.success(`Order ${res.order.id} created`, { description: `${res.order.weightKg} kg · ${garmentCount} garments · ${formatCurrency(res.order.total)}` })
+        toast.success(`Order ${res.order.id} created`, { description: `${res.order.serviceSummary} · ${formatCurrency(res.order.total)}` })
         notifySms(res.sms)
         navigate(`/orders/${res.order.id}${mode === 'print' ? '?print=1' : ''}`, { replace: true })
       }
@@ -275,14 +307,19 @@ export default function CreateOrder() {
     }
   }
 
-  const activeServices = services.filter((s) => s.active !== false || s.id === form.serviceId)
+  const usedIds = new Set(form.lines.map((l) => l.serviceId))
+  const pickable = services.filter((s) => s.active !== false || usedIds.has(s.id))
+  const activeServices = services.filter((s) => s.active !== false)
+  const tracksItems = form.lines.some((l) => services.find((s) => s.id === l.serviceId)?.trackItems)
+  const showItems = form.showItems || tracksItems || form.items.length > 0
+  const priced = form.lines.map((l, i) => ({ line: l, eff: effective[i], svc: services.find((s) => s.id === l.serviceId) })).filter((x) => x.eff)
 
   return (
     <div>
       <PageHeader
         breadcrumbs={[{ label: 'Orders', to: '/orders' }, ...(isEdit ? [{ label: editId, to: `/orders/${editId}` }] : []), { label: isEdit ? 'Edit' : 'New order' }]}
         title={isEdit ? `Edit order ${editId}` : 'Create new order'}
-        description={isEdit ? 'Update weight, garments, schedule and pricing. Recorded payments are not affected.' : 'Register the client, weigh the laundry, count the garments, then confirm payment.'}
+        description={isEdit ? 'Update services, items, schedule and pricing. Recorded payments are not affected.' : 'Register the client, add the services (laundry by kg, shoes by pair, …), then confirm payment.'}
       />
 
       <form id="order-form" onSubmit={(e) => { e.preventDefault(); submit('save') }} noValidate className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -318,58 +355,74 @@ export default function CreateOrder() {
             )}
           </Section>
 
-          {/* 2. Laundry & garments */}
-          <Section step={2} title="Laundry & garments" description="Weigh the laundry (priced per kg) and count the garments for tracking." icon={Shirt}
-            action={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{garmentCount} piece{garmentCount === 1 ? '' : 's'}</span>}
+          {/* 2. Services */}
+          <Section step={2} title="Services" description="Add every service on this order — each is charged in its own unit (kg, pairs, m², …)." icon={Layers}
+            action={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">{formatCurrency(totals.subtotal, { decimals: 0 })}</span>}
           >
-            <div className="mb-4 grid gap-4 sm:grid-cols-3">
-              <Field label="Service" required error={err('serviceId')} className="sm:col-span-2">
-                {(p) => (
-                  <Select {...p} value={form.serviceId} onChange={(e) => set({ serviceId: e.target.value })} placeholder="Select service">
-                    {activeServices.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name} — {formatCurrency(s.price, { decimals: 0 })}/kg</option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
-              <Field label="Weight (kg)" required error={err('weightKg')} hint={ratePerKg ? `${formatCurrency(ratePerKg, { decimals: 0 })} per kg` : undefined}>
-                {(p) => <Input {...p} type="number" inputMode="decimal" min="0.1" step="0.1" suffix="kg" value={form.weightKg} onChange={(e) => set({ weightKg: e.target.value })} placeholder="0.0" />}
-              </Field>
-            </div>
-            {isEdit && editing && form.serviceId === editing.serviceId && service && service.price !== editing.ratePerKg && (
-              <p className="-mt-2 mb-4 text-[11.5px] text-amber-700">This order keeps its agreed rate of {formatCurrency(editing.ratePerKg, { decimals: 0 })}/kg (current price is {formatCurrency(service.price, { decimals: 0 })}/kg).</p>
-            )}
-            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
-              <span className="flex items-center gap-2 text-[13px] text-slate-600"><Scale size={16} className="text-slate-400" aria-hidden /> {totals.weightKg || 0} kg × {formatCurrency(ratePerKg, { decimals: 0 })}/kg</span>
-              <span className="text-[15px] font-extrabold tabular-nums text-ink">{formatCurrency(totals.subtotal, { decimals: 0 })}</span>
-            </div>
-
-            {err('items') && <p className="mb-3 flex items-center gap-1.5 text-[13px] font-medium text-red-600" role="alert"><CircleAlert size={15} /> {err('items')}</p>}
+            {err('lines') && <p className="mb-3 flex items-center gap-1.5 text-[13px] font-medium text-red-600" role="alert"><CircleAlert size={15} /> {err('lines')}</p>}
+            {!activeServices.length && <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-800">No active services yet — add them on the Services page first.</p>}
             <div className="space-y-3">
-              {form.items.map((item, i) => (
-                <GarmentRow
-                  key={item.key}
+              {form.lines.map((line, i) => (
+                <ServiceLineRow
+                  key={line.key}
                   index={i}
-                  item={item}
-                  errors={{ name: err(`items.${i}.name`), quantity: err(`items.${i}.quantity`) }}
-                  onChange={(it) => setItem(i, it)}
-                  onRemove={() => set({ items: form.items.filter((_, idx) => idx !== i) })}
-                  onDuplicate={() => set({ items: [...form.items.slice(0, i + 1), { ...item, key: `k${++keySeq}`, id: undefined, status: undefined }, ...form.items.slice(i + 1)] })}
-                  canRemove={form.items.length > 1}
+                  line={line}
+                  effective={effective[i] ?? { unit: 'piece', quantity: 0, unitPrice: 0, minCharge: 0 }}
+                  service={services.find((s) => s.id === line.serviceId)}
+                  services={pickable}
+                  storedPrice={editing?.lines.find((l) => l.id && l.id === line.id && l.serviceId === line.serviceId)?.unitPrice}
+                  errors={{ serviceId: err(`lines.${i}.serviceId`), quantity: err(`lines.${i}.quantity`), unitPrice: err(`lines.${i}.unitPrice`) }}
+                  onChange={(l) => setLine(i, l)}
+                  onRemove={() => set({ lines: form.lines.filter((_, idx) => idx !== i) })}
+                  canRemove={form.lines.length > 1}
                 />
               ))}
             </div>
-            <Button variant="secondary" icon={Plus} className="mt-3 w-full sm:hidden" onClick={() => set({ items: [...form.items, newItem()] })}>Add garment</Button>
-            <div className="no-scrollbar -mx-4 mt-2 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:mt-3 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
-              <Button variant="secondary" icon={Plus} className="max-sm:hidden" onClick={() => set({ items: [...form.items, newItem()] })}>Add garment</Button>
-              {QUICK_ADD.map(([g, cat]) => (
-                <Button key={g} variant="ghost" size="sm" icon={Plus} className="max-sm:h-9 max-sm:rounded-full max-sm:border max-sm:border-line max-sm:bg-white" onClick={() => set({ items: [...form.items, newItem(g, cat)] })}>{g}</Button>
+            <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
+              <Button variant="secondary" icon={Plus} onClick={() => addLine(null)}>Add service</Button>
+              {activeServices.slice(0, 6).map((s) => (
+                <Button key={s.id} variant="ghost" size="sm" icon={Plus} className="max-sm:h-9 max-sm:rounded-full max-sm:border max-sm:border-line max-sm:bg-white" onClick={() => addLine(s)}>{s.name}</Button>
               ))}
             </div>
           </Section>
 
+          {/* 3. Garments & items (tracking only) */}
+          {showItems ? (
+            <Section step={3} title="Garments & items" description="Count the pieces for tracking (not priced). Optional." icon={Shirt}
+              action={<span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{garmentCount} piece{garmentCount === 1 ? '' : 's'}</span>}
+            >
+              {err('items') && <p className="mb-3 flex items-center gap-1.5 text-[13px] font-medium text-red-600" role="alert"><CircleAlert size={15} /> {err('items')}</p>}
+              {!form.items.length && <p className="mb-3 text-[13px] text-muted">No items listed. Add garments to track them through washing, drying and ironing.</p>}
+              <div className="space-y-3">
+                {form.items.map((item, i) => (
+                  <GarmentRow
+                    key={item.key}
+                    index={i}
+                    item={item}
+                    errors={{ name: err(`items.${i}.name`), quantity: err(`items.${i}.quantity`) }}
+                    onChange={(it) => setItem(i, it)}
+                    onRemove={() => set({ items: form.items.filter((_, idx) => idx !== i) })}
+                    onDuplicate={() => set({ items: [...form.items.slice(0, i + 1), { ...item, key: `k${++keySeq}`, id: undefined, status: undefined }, ...form.items.slice(i + 1)] })}
+                    canRemove
+                  />
+                ))}
+              </div>
+              <Button variant="secondary" icon={Plus} className="mt-3 w-full sm:hidden" onClick={() => set({ items: [...form.items, newItem()] })}>Add garment</Button>
+              <div className="no-scrollbar -mx-4 mt-2 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:mt-3 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
+                <Button variant="secondary" icon={Plus} className="max-sm:hidden" onClick={() => set({ items: [...form.items, newItem()] })}>Add garment</Button>
+                {QUICK_ADD.map(([g, cat]) => (
+                  <Button key={g} variant="ghost" size="sm" icon={Plus} className="max-sm:h-9 max-sm:rounded-full max-sm:border max-sm:border-line max-sm:bg-white" onClick={() => set({ items: [...form.items, newItem(g, cat)] })}>{g}</Button>
+                ))}
+              </div>
+            </Section>
+          ) : (
+            <button type="button" onClick={() => set({ showItems: true, items: [newItem()] })} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line bg-white px-4 py-3 text-[13px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-ink">
+              <ListPlus size={16} /> Add items list (optional — count garments or items for tracking)
+            </button>
+          )}
+
           {/* 3. Scheduling */}
-          <Section step={3} title="Scheduling" description="When the order came in, when it will be ready and when it will be delivered." icon={CalendarDays}>
+          <Section step={4} title="Scheduling" description="When the order came in, when it will be ready and when it will be delivered." icon={CalendarDays}>
             <fieldset className="mb-4">
               <legend className="mb-2 text-[13px] font-semibold text-slate-700">Priority</legend>
               <div className="grid grid-cols-3 gap-2">
@@ -411,7 +464,7 @@ export default function CreateOrder() {
           </Section>
 
           {/* 4. Pricing */}
-          <Section step={4} title="Pricing" description="Additional charges, discounts and tax." icon={Calculator}>
+          <Section step={5} title="Pricing" description="Additional charges, discounts and tax." icon={Calculator}>
             <div className="grid gap-4 sm:grid-cols-3">
               <Field label="Delivery / other charges" error={err('extraCharges')} hint={
                 <button type="button" className="font-semibold text-brand hover:underline" onClick={() => set({ extraCharges: (Number(form.extraCharges) || 0) + settings.pricing.deliveryFee })}>+ Add delivery fee ({formatCurrency(settings.pricing.deliveryFee, { decimals: 0 })})</button>
@@ -429,7 +482,7 @@ export default function CreateOrder() {
 
           {/* 5. Payment */}
           {!isEdit && (
-            <Section step={5} title="Payment" description="Record a payment now, or let the client pay later." icon={Wallet}>
+            <Section step={6} title="Payment" description="Record a payment now, or let the client pay later." icon={Wallet}>
               <div role="radiogroup" aria-label="Payment option" className="mb-4 grid grid-cols-3 gap-2">
                 {[['none', 'Pay later', 'No payment now'], ['partial', 'Deposit', 'Part payment'], ['full', 'Pay in full', formatCurrency(totals.total, { decimals: 0 })]].map(([v, label, sub]) => (
                   <button key={v} type="button" role="radio" aria-checked={form.payOption === v}
@@ -474,21 +527,22 @@ export default function CreateOrder() {
 
               <div className="rounded-xl bg-slate-50 p-3">
                 <div className="mb-2 flex justify-between text-[11px] font-semibold uppercase tracking-wider text-muted">
-                  <span>{garmentCount} garments · {form.items.length} lines</span>
-                  <span>{totals.weightKg || 0} kg</span>
+                  <span>{priced.length} service{priced.length === 1 ? '' : 's'}</span>
+                  {garmentCount > 0 && <span>{garmentCount} item{garmentCount === 1 ? '' : 's'}</span>}
                 </div>
                 <ul className="scroll-thin max-h-48 space-y-1.5 overflow-y-auto pr-1">
-                  {form.items.map((it) => (
-                    <li key={it.key} className="flex justify-between gap-2 text-[12.5px]">
-                      <span className="min-w-0 truncate text-slate-600">{it.name || '—'} <span className="text-slate-400">· {it.category}</span></span>
-                      <span className="shrink-0 font-semibold tabular-nums text-ink">×{it.quantity || 0}</span>
+                  {priced.map(({ line, eff, svc }) => (
+                    <li key={line.key} className="flex justify-between gap-2 text-[12.5px]">
+                      <span className="min-w-0 truncate text-slate-600"><span className="font-semibold text-ink">{svc.name}</span> · {formatQuantity(eff.quantity, eff)} × {formatCurrency(eff.unitPrice, { decimals: 0 })}</span>
+                      <span className="shrink-0 tabular-nums">{formatCurrency(lineTotal(eff), { decimals: 0 })}</span>
                     </li>
                   ))}
+                  {!priced.length && <li className="text-[12.5px] text-muted">No services yet</li>}
                 </ul>
               </div>
 
               <div className="space-y-1.5">
-                <SummaryRow label={`${totals.weightKg || 0} kg × ${formatCurrency(ratePerKg, { decimals: 0 })}`} value={formatCurrency(totals.subtotal)} />
+                <SummaryRow label="Services subtotal" value={formatCurrency(totals.subtotal)} />
                 {totals.surcharge > 0 && <SummaryRow label={`${form.priority === 'urgent' ? 'Urgent' : 'Express'} surcharge (${totals.surchargeRate}%)`} value={formatCurrency(totals.surcharge)} />}
                 {totals.extraCharges > 0 && <SummaryRow label="Additional charges" value={formatCurrency(totals.extraCharges)} />}
                 {totals.discount > 0 && <SummaryRow label="Discount" value={`− ${formatCurrency(totals.discount)}`} tone="muted" />}
@@ -522,7 +576,7 @@ export default function CreateOrder() {
       <div className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_-8px_rgb(16_24_40/0.12)] backdrop-blur-md lg:hidden">
         <div className="mx-auto flex max-w-xl items-center gap-2.5">
           <div className="mr-auto min-w-0">
-            <p className="text-[11px] font-medium text-muted">{totals.weightKg || 0} kg · {garmentCount} item{garmentCount === 1 ? '' : 's'} · Total</p>
+            <p className="text-[11px] font-medium text-muted">{priced.length} service{priced.length === 1 ? '' : 's'}{garmentCount ? ` · ${garmentCount} item${garmentCount === 1 ? '' : 's'}` : ''} · Total</p>
             <p className="truncate text-lg font-extrabold leading-tight tabular-nums text-ink">{formatCurrency(totals.total, { decimals: 0 })}</p>
           </div>
           <Button variant="secondary" size="icon-lg" icon={Printer} className="shrink-0" aria-label="Save and print receipt" onClick={() => submit('print')} disabled={!!saving} />

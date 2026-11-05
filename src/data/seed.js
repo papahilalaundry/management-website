@@ -10,11 +10,11 @@
 import { addDays, addHours, addMinutes, setHours, setMinutes, startOfDay, subDays } from 'date-fns'
 import { collection, doc, getDocs, writeBatch } from 'firebase/firestore'
 import { firestore } from '../firebase'
-import { calcOrderTotals, avgIntervalDays, clientTypeFor, garmentCount, paymentStatusFor } from '../utils/calculations'
+import { calcOrderTotals, avgIntervalDays, clientTypeFor, garmentCount, lineTotal, paymentStatusFor } from '../utils/calculations'
 import { formatId } from '../utils/generateIds'
 import { roundMoney } from '../utils/formatCurrency'
 import { DEFAULT_SETTINGS } from './defaults'
-import { DEFAULT_RATE_PER_KG, STAGE_VALUES } from './constants'
+import { DEFAULT_RATE_PER_KG, formatQuantity, STAGE_VALUES } from './constants'
 
 /* ---------------------------------------------------------------- PRNG -- */
 function mulberry32(seed) {
@@ -107,7 +107,21 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
   const by = () => (active.length ? pick(active).id : null)
   const pricing = DEFAULT_SETTINGS.pricing
 
-  const service = { id: 'SRV-01', name: 'Laundry (wash, dry & fold)', description: 'Everyday laundry, priced by weight.', pricingModel: 'per_kg', price: DEFAULT_RATE_PER_KG, active: true, createdAt: iso(subDays(now, 60)), updatedAt: iso(subDays(now, 60)) }
+  // Demo services and prices — edit them on the Services page.
+  const svc = (n, name, description, unit, price, extra = {}) => ({ id: formatId('SRV', n, 2), name, description, unit, unitLabel: '', price, minCharge: 0, priceEditable: false, trackItems: false, active: true, createdAt: iso(subDays(now, 60)), updatedAt: iso(subDays(now, 60)), ...extra })
+  const services = [
+    svc(1, 'Laundry (wash, dry & fold)', 'Everyday laundry, priced by weight.', 'kg', DEFAULT_RATE_PER_KG, { trackItems: true }),
+    svc(2, 'Shoe cleaning', 'Sneakers, school shoes, boots. Price agreed per pair.', 'pair', 250, { priceEditable: true }),
+    svc(3, 'Carpet cleaning', 'Shampoo, rinse and dry.', 'sqm', 150, { minCharge: 1000 }),
+    svc(4, 'Curtain cleaning', 'Wash and press, per curtain panel.', 'panel', 300),
+    svc(5, 'Duvet cleaning', 'Deep clean for duvets of any size.', 'piece', 500),
+    svc(6, 'Ironing only', 'Pressing for already-clean garments.', 'piece', 30, { trackItems: true }),
+  ]
+  const [laundry, shoes, carpet, curtains, duvet] = services
+  const line = (n, l, service, quantity, unitPrice = service.price) => {
+    const out = { id: `l_${n}_${l}`, serviceId: service.id, serviceName: service.name, unit: service.unit, unitLabel: '', quantity, unitPrice, minCharge: service.minCharge, notes: '' }
+    return { ...out, total: lineTotal(out) }
+  }
 
   const customers = CUSTOMERS.map(([name, phone, address], i) => ({
     id: formatId('CUS', i + 1),
@@ -137,18 +151,25 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
     if (receivedAt > now || new Date(c.createdAt) > receivedAt) continue
     const priority = rand() < 0.8 ? 'normal' : rand() < 0.7 ? 'express' : 'urgent'
     const dueAt = priority === 'urgent' ? addHours(receivedAt, 6) : setMinutes(setHours(addDays(startOfDay(receivedAt), priority === 'express' ? 1 : 2), 17), 0)
-    const weightKg = Math.round(between(2, 12) * 10) / 10
-    const lines = 2 + Math.floor(rand() * 3)
+    // Most orders are laundry; some add shoes, curtains, a duvet or a carpet.
+    const lines = []
+    if (n % 9 !== 4) lines.push(line(n, 0, laundry, Math.round(between(2, 12) * 10) / 10))
+    if (rand() < 0.25) lines.push(line(n, 1, shoes, 1 + Math.floor(rand() * 3), pick([200, 250, 300, 350])))
+    if (rand() < 0.1) lines.push(line(n, 2, curtains, 2 + Math.floor(rand() * 4)))
+    if (rand() < 0.1) lines.push(line(n, 3, duvet, 1))
+    if (n % 9 === 4) lines.push(line(n, 4, carpet, Math.round(between(4, 12) * 10) / 10))
+    const garmentLines = lines.some((l) => l.serviceId === laundry.id) ? 2 + Math.floor(rand() * 3) : 0
     const items = []
     const used = new Set()
-    for (let l = 0; l < lines; l++) {
+    for (let l = 0; l < garmentLines; l++) {
       const [category, name] = pick(GARMENTS)
       if (used.has(name)) continue
       used.add(name)
       items.push({ id: `g_${n}_${l}`, category, name, quantity: 1 + Math.floor(rand() * 6), instructions: '', condition: '', status: 'received' })
     }
     const extraCharges = rand() < 0.25 ? pricing.deliveryFee : 0
-    const totals = calcOrderTotals({ weightKg, ratePerKg: service.price, priority, extraCharges, discount: 0, taxRate: pricing.taxRate }, pricing)
+    const totals = calcOrderTotals({ lines, priority, extraCharges, discount: 0, taxRate: pricing.taxRate }, pricing)
+    const serviceSummary = lines.map((l) => `${l.serviceName} (${formatQuantity(l.quantity, l)})`).join(', ')
 
     // Status from age; a couple of open orders are left overdue on purpose.
     const ageH = (now - receivedAt) / 36e5
@@ -171,8 +192,10 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
       customerName: c.name,
       customerNameLower: c.nameLower,
       customerPhone: c.phone,
-      serviceId: service.id,
-      serviceName: service.name,
+      lines,
+      serviceIds: [...new Set(lines.map((l) => l.serviceId))],
+      serviceNames: [...new Set(lines.map((l) => l.serviceName))],
+      serviceSummary,
       items,
       garmentCount: garmentCount(items),
       priority,
@@ -197,7 +220,7 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
       updatedAt: iso(t),
       cancelledAt: cancelled ? iso(addHours(receivedAt, 2)) : null,
       cancelReason: cancelled ? 'Client changed their mind' : '',
-      history: [{ id: `h_${n}`, type: 'created', message: `Order created: ${totals.weightKg} kg, ${garmentCount(items)} garments`, at: iso(receivedAt), by: stages.received.by }],
+      history: [{ id: `h_${n}`, type: 'created', message: `Order created: ${serviceSummary}`, at: iso(receivedAt), by: stages.received.by }],
     }
     if (cancelled) order.balance = 0
 
@@ -281,7 +304,7 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
 
   const open = orders.filter((o) => o.isOpen)
   const notifications = [
-    ...orders.slice(-4).map((o, i) => ({ id: `NTF-SEED-${i + 1}`, category: 'new_order', title: 'New order received', message: `${o.id} from ${o.customerName} — ${o.weightKg} kg.`, link: `/orders/${o.id}`, createdAt: o.receivedAt, read: i < 2 })),
+    ...orders.slice(-4).map((o, i) => ({ id: `NTF-SEED-${i + 1}`, category: 'new_order', title: 'New order received', message: `${o.id} from ${o.customerName} — ${o.serviceSummary}.`, link: `/orders/${o.id}`, createdAt: o.receivedAt, read: i < 2 })),
     ...payments.slice(-2).map((p, i) => ({ id: `NTF-SEED-P${i + 1}`, category: 'payment', title: 'Payment received', message: `KES ${p.amount} for ${p.orderId} (${p.customerName}).`, link: `/orders/${p.orderId}`, createdAt: p.paidAt, read: false })),
     { id: 'NTF-SEED-L1', category: 'low_stock', title: 'Out of stock', message: 'Stain remover: 0 bottles left (minimum 2).', link: '/inventory?item=INV-007', createdAt: iso(subDays(now, 3)), read: false },
     ...(open[0] ? [{ id: 'NTF-SEED-O1', category: 'overdue', title: 'Order overdue', message: `${open[0].id} for ${open[0].customerName} is past its due time.`, link: `/orders/${open[0].id}`, createdAt: iso(subDays(now, 1)), read: false }] : []),
@@ -305,7 +328,7 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
   expenses.forEach((e) => bump(e.date, { expenses: e.amount, expenseByCategory: { [e.category]: e.amount } }))
 
   return {
-    services: [service],
+    services,
     customers,
     orders,
     payments,
@@ -315,7 +338,7 @@ export function generateDemoData({ now = new Date(), staff = [] } = {}) {
     notifications,
     activities,
     stats: [...stats.values()],
-    counters: { order: orders.length, customer: customers.length, payment: payments.length, expense: expenses.length, inventory: inventory.length, service: 1 },
+    counters: { order: orders.length, customer: customers.length, payment: payments.length, expense: expenses.length, inventory: inventory.length, service: services.length },
   }
 }
 

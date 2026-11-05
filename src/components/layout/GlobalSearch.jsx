@@ -46,7 +46,7 @@ export default function GlobalSearch({ className = '', autoFocus = false, inline
       .then(([orders, customers]) => {
         if (stale) return
         const results = [
-          ...orders.rows.slice(0, 5).map((o) => ({ type: 'order', id: o.id, to: `/orders/${o.id}`, title: o.id, subtitle: `${o.customer.name} · ${o.weightKg ?? '–'} kg · ${o.garmentCount ?? 0} garments`, status: o.status })),
+          ...orders.rows.slice(0, 5).map((o) => ({ type: 'order', id: o.id, to: `/orders/${o.id}`, title: o.id, subtitle: `${o.customer.name} · ${o.serviceSummary || (o.serviceNames ?? []).join(', ')}`, status: o.status })),
           ...customers.slice(0, 4).map((c) => ({ type: 'customer', id: c.id, to: `/customers/${c.id}`, title: c.name, subtitle: `${c.id} · ${displayPhone(c.phone)}` })),
         ]
         setFound({ q, results })

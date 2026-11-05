@@ -18,7 +18,7 @@ import { LogoMark } from '../components/layout/Logo'
 import { RoleBadge } from '../components/shared/StatusBadges'
 import { DATE_FORMAT_OPTIONS } from '../utils/formatDate'
 import { formatCurrency } from '../utils/formatCurrency'
-import { LOGIN_EMAIL_DOMAIN } from '../data/constants'
+import { LOGIN_EMAIL_DOMAIN, unitLabel } from '../data/constants'
 import { PERMISSIONS } from '../utils/permissions'
 
 function useSectionForm(initial) {
@@ -152,7 +152,7 @@ function BusinessTab() {
       <SectionCard title="Tax & surcharges" description="Applied to new orders. Existing orders keep their original values." icon={Calculator} onSave={() => saveSection('pricing', p.form, p, 'Pricing settings')} saving={p.saving}>
         <p className="flex items-start gap-2 rounded-lg bg-sky-soft/60 px-3 py-2 text-xs text-navy-800">
           <Info size={14} className="mt-px shrink-0 text-brand" />
-          <span>Laundry is charged by weight. The rate per kg (default {formatCurrency(50, { decimals: 0 })}/kg) is set for each service on the <strong>Services</strong> page. Surcharges below are added on top.</span>
+          <span>Each service has its own price and unit (per kg, pair, piece, m², panel, job or a custom unit), set on the <strong>Services</strong> page. Surcharges below are added on top.</span>
         </p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Tax label">{(x) => <Input {...x} value={p.form.taxLabel} onChange={p.set('taxLabel')} />}</Field>
@@ -174,7 +174,7 @@ function ServicesTab() {
     setSaving(s.id)
     try {
       await catalogService.updateService(s.id, { ...s, price: prices[s.id] ?? s.price })
-      toast.success(`${s.name} rate updated`)
+      toast.success(`${s.name} price updated`)
       setPrices((p) => ({ ...p, [s.id]: undefined }))
       reload({ silent: true })
     } catch (e) {
@@ -192,7 +192,7 @@ function ServicesTab() {
     }
   }
   return (
-    <SectionCard title="Rates per kg & availability" description="Quick-edit each service’s rate per kg. New rates apply to new orders only." icon={Shirt}>
+    <SectionCard title="Service prices" description="Quick-edit each service’s price per unit. New prices apply to new orders only." icon={Shirt}>
       {loading && !data ? <Skeleton className="h-64 w-full" /> : (
         <div className="divide-y divide-line rounded-xl border border-line">
           {data.map((s) => {
@@ -201,10 +201,10 @@ function ServicesTab() {
               <div key={s.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-ink">{s.name}</p>
-                  <p className="text-xs text-muted">currently {formatCurrency(s.price, { decimals: 0 })} per kg</p>
+                  <p className="text-xs text-muted">currently {formatCurrency(s.price, { decimals: 0 })} {s.unit === 'job' ? 'per job' : `per ${unitLabel(s)}`}{s.minCharge > 0 ? ` · min ${formatCurrency(s.minCharge, { decimals: 0 })}` : ''}</p>
                 </div>
-                <Input aria-label={`${s.name} rate per kg`} type="number" min="1" prefix="KES" suffix="/kg" className="sm:w-36" value={prices[s.id] ?? s.price} onChange={(e) => setPrices((p) => ({ ...p, [s.id]: e.target.value }))} />
-                <Button size="sm" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty || prices[s.id] === '' || !(Number(prices[s.id]) > 0)} loading={saving === s.id} onClick={() => save(s)}>Save</Button>
+                <Input aria-label={`${s.name} price ${s.unit === 'job' ? 'per job' : `per ${unitLabel(s)}`}`} type="number" min="0" prefix="KES" suffix={s.unit === 'job' ? undefined : `/${unitLabel(s)}`} className="sm:w-40" value={prices[s.id] ?? s.price} onChange={(e) => setPrices((p) => ({ ...p, [s.id]: e.target.value }))} />
+                <Button size="sm" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty || prices[s.id] === '' || !(Number(prices[s.id]) >= 0)} loading={saving === s.id} onClick={() => save(s)}>Save</Button>
                 <div className="sm:w-32"><Switch checked={s.active !== false} onChange={() => toggle(s)} label={s.active !== false ? 'Active' : 'Inactive'} /></div>
               </div>
             )

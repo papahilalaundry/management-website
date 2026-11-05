@@ -1,7 +1,8 @@
 /**
- * Orders. Laundry is priced by weight (kg × the service's rate per kg); the
- * garments in each order are still listed and counted, and each garment moves
- * through the workflow stages.
+ * Orders. An order has one or more service lines, each measured in its
+ * service's unit (kg of laundry, pairs of shoes, m² of carpet, ...) at an
+ * agreed price per unit. Garments/items can still be listed and counted, and
+ * each one moves through the workflow stages.
  *
  * Each order stores what lists need (customer name/phone, amount paid,
  * balance, payment status, garment count) so pages can be fetched one at a time.
@@ -12,8 +13,9 @@ import { request, notFound, validationError, ApiError } from './mockApi'
 import { customerAfter, enrichOrder, logActivity, nowIso, pushNotification, sendSimulatedSms, staffName } from './helpers'
 import { orderPaidPatch, writePayment } from './paymentService'
 import { db } from './storage'
-import { calcOrderTotals, deriveOrderStatusFromGarments, garmentCount, paymentStatusFor } from '../utils/calculations'
-import { FEEDBACK_RATINGS, methodLabel, OPEN_STATUSES, ORDER_STATUS_OPTIONS, stageIndex, stageLabel, STAGE_VALUES } from '../data/constants'
+import { withUnit } from './catalogService'
+import { calcOrderTotals, deriveOrderStatusFromGarments, garmentCount, lineTotal, paymentStatusFor } from '../utils/calculations'
+import { FEEDBACK_RATINGS, formatQuantity, methodLabel, OPEN_STATUSES, ORDER_STATUS_OPTIONS, pricingUnitMeta, stageIndex, stageLabel, STAGE_VALUES, unitLabel, unitOf } from '../data/constants'
 import { can } from '../utils/permissions'
 import { uid } from '../utils/generateIds'
 import { formatCurrency, roundMoney } from '../utils/formatCurrency'
@@ -26,15 +28,20 @@ function validateOrderInput(data, { existing } = {}) {
   const e = {}
   if (!existing && !data.customerId) e.customerId = 'Select or register a customer'
 
-  const svc = db.get('services').find((s) => s.id === data.serviceId)
-  if (!svc) e.serviceId = 'Select a service'
-  else if (svc.active === false && existing?.serviceId !== svc.id) e.serviceId = `${svc.name} is currently unavailable`
+  if (!data.lines?.length) e.lines = 'Add at least one service'
+  const existingIds = new Set((existing?.lines ?? []).map((l) => l.serviceId))
+  ;(data.lines || []).forEach((l, i) => {
+    const svc = db.get('services').find((s) => s.id === l.serviceId)
+    if (!svc) { e[`lines.${i}.serviceId`] = 'Select a service'; return }
+    if (svc.active === false && !existingIds.has(svc.id)) e[`lines.${i}.serviceId`] = `${svc.name} is currently unavailable`
+    const meta = pricingUnitMeta(unitOf(svc))
+    const q = Number(l.quantity)
+    if (l.quantity === '' || l.quantity == null || Number.isNaN(q) || q <= 0) e[`lines.${i}.quantity`] = `Enter the ${unitLabel(withUnit(svc))} quantity`
+    else if (!meta.decimals && !Number.isInteger(q)) e[`lines.${i}.quantity`] = `Use a whole number of ${meta.plural}`
+    else if (unitOf(svc) === 'kg' && q > 500) e[`lines.${i}.quantity`] = 'That weight looks too large — check the scale reading'
+    if (svc.priceEditable && (l.unitPrice === '' || l.unitPrice == null || Number.isNaN(Number(l.unitPrice)) || Number(l.unitPrice) < 0)) e[`lines.${i}.unitPrice`] = 'Enter the agreed price'
+  })
 
-  const kg = Number(data.weightKg)
-  if (data.weightKg === '' || data.weightKg == null || Number.isNaN(kg) || kg <= 0) e.weightKg = 'Enter the laundry weight in kg'
-  else if (kg > 500) e.weightKg = 'That weight looks too large — check the scale reading'
-
-  if (!data.items?.length) e.items = 'List at least one garment (use "Mixed load" if not counted)'
   ;(data.items || []).forEach((it, i) => {
     if (!it.name?.trim()) e[`items.${i}.name`] = 'Garment name is required'
     const q = Number(it.quantity)
@@ -47,8 +54,40 @@ function validateOrderInput(data, { existing } = {}) {
   if (data.deliveryAt && data.receivedAt && new Date(data.deliveryAt) < new Date(data.receivedAt)) e.deliveryAt = 'Delivery cannot be before the date received'
   if (Number(data.discount) < 0) e.discount = 'Discount cannot be negative'
   if (Number(data.extraCharges) < 0) e.extraCharges = 'Charges cannot be negative'
-  return { errors: e, service: svc }
+  return { errors: e }
 }
+
+/**
+ * Stored service lines. The agreed price is fixed on the order: on edit, a
+ * line for the same service keeps its price unless the service allows staff
+ * to set the price per order.
+ */
+function snapshotLines(lines, previous = []) {
+  return lines.map((l) => {
+    const svc = withUnit(db.get('services').find((s) => s.id === l.serviceId))
+    const prev = previous.find((p) => (l.id && p.id === l.id) || (!l.id && p.serviceId === svc.id))
+    const unitPrice = svc.priceEditable ? Number(l.unitPrice) : prev && prev.serviceId === svc.id ? prev.unitPrice : svc.price
+    const line = {
+      id: prev?.serviceId === svc.id ? prev.id : uid('l'),
+      serviceId: svc.id,
+      serviceName: svc.name,
+      unit: svc.unit,
+      unitLabel: svc.unitLabel ?? '',
+      quantity: Number(l.quantity),
+      unitPrice,
+      minCharge: prev?.serviceId === svc.id ? prev.minCharge ?? 0 : svc.minCharge ?? 0,
+      notes: l.notes?.trim() ?? '',
+    }
+    return { ...line, total: lineTotal(line) }
+  })
+}
+
+/** Fields derived from the lines, stored for lists and filters. */
+const lineFields = (lines) => ({
+  serviceIds: [...new Set(lines.map((l) => l.serviceId))],
+  serviceNames: [...new Set(lines.map((l) => l.serviceName))],
+  serviceSummary: lines.map((l) => `${l.serviceName} (${formatQuantity(l.quantity, l)})`).join(', '),
+})
 
 function snapshotItems(items, previous = [], fallbackStatus = 'received') {
   return items.map((it) => {
@@ -121,7 +160,7 @@ function listQuery({ status = 'all', payment, service, staff, customerId, from, 
   if (status === 'all') parts.push(where('cancelled', '==', false))
   else if (status) parts.push(where('status', '==', status))
   if (payment) parts.push(where('paymentStatus', '==', payment))
-  if (service) parts.push(where('serviceId', '==', service))
+  if (service) parts.push(where('serviceIds', 'array-contains', service))
   if (staff) parts.push(where('assignedTo', '==', staff))
   if (customerId) parts.push(where('customerId', '==', customerId))
   if (from) parts.push(where('receivedAt', '>=', from))
@@ -132,7 +171,7 @@ function listQuery({ status = 'all', payment, service, staff, customerId, from, 
 function matches(o, { status = 'all', payment, service, staff, customerId, from, to } = {}) {
   if (status === 'all' ? o.cancelled : status && o.status !== status) return false
   if (payment && o.paymentStatus !== payment) return false
-  if (service && o.serviceId !== service) return false
+  if (service && !(o.serviceIds ?? [o.serviceId]).includes(service)) return false
   if (staff && o.assignedTo !== staff) return false
   if (customerId && o.customerId !== customerId) return false
   if (from && o.receivedAt < from) return false
@@ -221,13 +260,14 @@ export const orderService = {
   },
 
   /**
-   * data: { customerId, serviceId, weightKg, items[{category,name,quantity,instructions,condition}],
+   * data: { customerId, lines[{ serviceId, quantity, unitPrice (only used if the service allows it), notes }],
+   *         items[{category,name,quantity,instructions,condition}] (optional garment/item list),
    *         priority, receivedAt, dueAt, pickupAt, deliveryAt, assignedTo, extraCharges, discount, notes,
    *         payment?: { method, amount, expectedAmount, payerName, reference, paidAt } }
    */
   createOrder(data) {
     return request(async (user) => {
-      const { errors, service } = validateOrderInput(data)
+      const { errors } = validateOrderInput(data)
       const discount = Number(data.discount) || 0
       if (discount > 0 && !can(user, 'orders.discount')) errors.discount = 'Only managers and admins can apply discounts'
       if (Object.keys(errors).length) throw validationError(errors)
@@ -240,8 +280,9 @@ export const orderService = {
         const { ids, commit } = await allocate(tx, { order: 1, payment: pay ? 1 : 0 })
 
         const settings = db.get('settings')
-        const items = snapshotItems(data.items)
-        const totals = calcOrderTotals({ weightKg: data.weightKg, ratePerKg: service.price, priority: data.priority, extraCharges: data.extraCharges, discount, taxRate: settings.pricing.taxRate }, settings.pricing)
+        const items = snapshotItems(data.items ?? [])
+        const lines = snapshotLines(data.lines)
+        const totals = calcOrderTotals({ lines, priority: data.priority, extraCharges: data.extraCharges, discount, taxRate: settings.pricing.taxRate }, settings.pricing)
         const at = nowIso()
         const receivedAt = iso(data.receivedAt)
         const order = {
@@ -250,8 +291,8 @@ export const orderService = {
           customerName: customer.name,
           customerNameLower: customer.name.toLowerCase(),
           customerPhone: customer.phone,
-          serviceId: service.id,
-          serviceName: service.name,
+          lines,
+          ...lineFields(lines),
           items,
           garmentCount: garmentCount(items),
           priority: data.priority || 'normal',
@@ -276,7 +317,7 @@ export const orderService = {
           updatedAt: at,
           cancelledAt: null,
           cancelReason: '',
-          history: [{ id: uid('h'), type: 'created', message: `Order created: ${totals.weightKg} kg, ${garmentCount(items)} garments`, at, by: user.id }],
+          history: [{ id: uid('h'), type: 'created', message: `Order created: ${lineFields(lines).serviceSummary}${items.length ? `; ${garmentCount(items)} items listed` : ''}`, at, by: user.id }],
         }
 
         let payment = null
@@ -289,7 +330,7 @@ export const orderService = {
         tx.update(customerSnap.ref, customerAfter(customer, { orders: 1, orderAt: receivedAt, billed: order.total, paid: payment?.amount ?? 0, outstanding: order.balance }))
         bumpStats(tx, receivedAt, { orders: 1, billed: order.total, kg: order.weightKg, garments: order.garmentCount })
         logActivity(tx, 'order_created', `created order ${order.id} for ${customer.name}`, user, { orderId: order.id, customerId: customer.id })
-        pushNotification(tx, 'new_order', 'New order received', `${order.id} from ${customer.name} — ${order.weightKg} kg, ${formatCurrency(order.total)}.`, `/orders/${order.id}`)
+        pushNotification(tx, 'new_order', 'New order received', `${order.id} from ${customer.name} — ${order.serviceSummary}, ${formatCurrency(order.total)}.`, `/orders/${order.id}`)
         const sms = sendSimulatedSms(tx, 'order_received', { customer, order }, user)
         return { order, payment, sms }
       })
@@ -303,22 +344,22 @@ export const orderService = {
         const order = await txOrder(tx, id)
         if (order.cancelled) throw new ApiError('Cancelled orders cannot be edited.')
         if (order.status === 'delivered' && !can(user, 'orders.discount')) throw new ApiError('Only managers can edit delivered orders.', { status: 403 })
-        const { errors, service } = validateOrderInput(data, { existing: order })
+        const { errors } = validateOrderInput(data, { existing: order })
         const discount = Number(data.discount) || 0
         if (discount !== order.discount && !can(user, 'orders.discount')) errors.discount = 'Only managers and admins can change discounts'
         if (Object.keys(errors).length) throw validationError(errors)
         const customerSnap = await tx.get(docRef('customers', order.customerId))
 
-        const items = snapshotItems(data.items, order.items, order.status)
-        const ratePerKg = service.id === order.serviceId ? order.ratePerKg : service.price // agreed rate is kept unless the service changes
-        const totals = calcOrderTotals({ weightKg: data.weightKg, ratePerKg, priority: data.priority, extraCharges: data.extraCharges, discount, taxRate: order.taxRate }, db.get('settings').pricing)
-        if (totals.total + 0.001 < order.amountPaid) throw validationError({ weightKg: `New total (${formatCurrency(totals.total)}) is less than the amount already paid (${formatCurrency(order.amountPaid)}).` })
+        const items = snapshotItems(data.items ?? [], order.items, order.status)
+        const lines = snapshotLines(data.lines, order.lines ?? [])
+        const totals = calcOrderTotals({ lines, priority: data.priority, extraCharges: data.extraCharges, discount, taxRate: order.taxRate }, db.get('settings').pricing)
+        if (totals.total + 0.001 < order.amountPaid) throw validationError({ lines: `New total (${formatCurrency(totals.total)}) is less than the amount already paid (${formatCurrency(order.amountPaid)}).` })
 
         const before = { at: order.receivedAt, total: order.total, kg: order.weightKg, garments: order.garmentCount, balance: order.balance }
         const receivedAt = iso(data.receivedAt)
         Object.assign(order, {
-          serviceId: service.id,
-          serviceName: service.name,
+          lines,
+          ...lineFields(lines),
           items,
           garmentCount: garmentCount(items),
           priority: data.priority,
@@ -334,7 +375,7 @@ export const orderService = {
           updatedAt: nowIso(),
         })
         order.stages.received = { ...order.stages.received, at: receivedAt }
-        order.history.push({ id: uid('h'), type: 'edited', message: `Order details updated (${order.weightKg} kg, total ${formatCurrency(order.total)})`, at: nowIso(), by: user.id })
+        order.history.push({ id: uid('h'), type: 'edited', message: `Order details updated (${order.serviceSummary}; total ${formatCurrency(order.total)})`, at: nowIso(), by: user.id })
 
         tx.set(docRef('orders', id), order)
         if (customerSnap.exists()) tx.update(customerSnap.ref, customerAfter(customerSnap.data(), { orderAt: receivedAt, billed: order.total - before.total, outstanding: order.balance - before.balance }))

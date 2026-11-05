@@ -11,7 +11,7 @@ import { displayPhone } from '../../utils/validators'
 const SORT = {
   customer: (o) => o.customer.name,
   garments: (o) => o.garmentCount,
-  weight: (o) => o.weightKg,
+  weight: (o) => o.weightKg || 0,
   receivedAt: (o) => o.receivedAt,
   dueAt: (o) => o.dueAt,
   total: (o) => o.total,
@@ -54,13 +54,13 @@ export default function OrderTable({ rows, loading, table: externalTable, varian
         </div>
       ),
     },
-    { key: 'weight', header: 'Weight', sortable, align: 'right', hideBelow: 'md', render: (o) => <span className="font-semibold tabular-nums">{o.weightKg} kg</span> },
+    { key: 'weight', header: 'Weight', sortable, align: 'right', hideBelow: 'md', render: (o) => (o.weightKg > 0 ? <span className="font-semibold tabular-nums">{o.weightKg} kg</span> : <span className="text-slate-400">—</span>) },
     full && { key: 'garments', header: 'Pieces', sortable, align: 'center', render: (o) => <span className="tabular-nums text-slate-600">{o.garmentCount}</span>, hideBelow: 'lg' },
     {
-      key: 'service', header: 'Service', hideBelow: 'xl',
+      key: 'service', header: 'Services', hideBelow: 'xl',
       render: (o) => (
-        <div className="max-w-[160px]">
-          <p className="truncate text-[13px] text-slate-700">{o.serviceName}</p>
+        <div className="max-w-[200px]">
+          <p className="truncate text-[13px] text-slate-700" title={o.serviceSummary}>{o.serviceSummary || o.serviceNames?.join(', ')}</p>
           {o.deliveryAt && <p className="text-[11px] text-muted">Delivery {formatDate(o.deliveryAt)}</p>}
         </div>
       ),
@@ -111,7 +111,7 @@ export default function OrderTable({ rows, loading, table: externalTable, varian
           <>
             {!hideCustomer && <span className="font-mono font-semibold text-slate-600">{o.id}</span>}
             {!hideCustomer && ' · '}
-            {o.weightKg} kg · {o.garmentCount} item{o.garmentCount === 1 ? '' : 's'}
+            {o.serviceSummary || o.serviceNames?.join(', ')}
           </>
         ),
         meta: (o) => (

@@ -164,7 +164,7 @@ export default function RecordPaymentModal({ open, onClose, order: fixedOrder, c
                       setErrors({})
                     }}
                     placeholder={loadingOrders ? 'Loading orders…' : 'Select an order'}
-                    options={orders.map((o) => ({ value: o.id, label: `${o.id} · ${formatDate(o.receivedAt)} · ${o.weightKg ?? '—'} kg · balance ${formatCurrency(o.balance)}` }))}
+                    options={orders.map((o) => ({ value: o.id, label: `${o.id} · ${formatDate(o.receivedAt)} · ${(o.serviceNames ?? []).join(', ')} · balance ${formatCurrency(o.balance)}` }))}
                   />
                 )}
               </Field>

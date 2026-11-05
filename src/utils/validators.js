@@ -4,7 +4,9 @@
  * inline errors) and the mock API (server-side style validation).
  */
 
-import { isMpesaMethod, PAYMENT_METHOD_VALUES } from '../data/constants'
+import { isMpesaMethod, PAYMENT_METHOD_VALUES, PRICING_UNITS } from '../data/constants'
+
+const PRICING_UNIT_VALUES = PRICING_UNITS.map((u) => u.value)
 
 export const normalizePhone = (phone = '') => String(phone).replace(/[\s()-]/g, '')
 
@@ -91,7 +93,10 @@ export function validateInventoryItem(data) {
 export function validateService(data) {
   const e = {}
   if (!data.name?.trim()) e.name = 'Service name is required'
-  if (data.price === '' || Number.isNaN(Number(data.price)) || Number(data.price) <= 0) e.price = 'Enter the price per kg'
+  if (!PRICING_UNIT_VALUES.includes(data.unit)) e.unit = 'Choose how this service is measured'
+  if (data.unit === 'custom' && !data.unitLabel?.trim()) e.unitLabel = 'Name the unit, e.g. "seat" or "bag"'
+  if (data.price === '' || data.price == null || Number.isNaN(Number(data.price)) || Number(data.price) < 0) e.price = 'Enter a price (0 or more)'
+  if (data.minCharge !== '' && data.minCharge != null && (Number.isNaN(Number(data.minCharge)) || Number(data.minCharge) < 0)) e.minCharge = 'Minimum charge cannot be negative'
   return e
 }
 

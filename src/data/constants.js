@@ -61,9 +61,33 @@ export const PRIORITIES = [
   { value: 'urgent', label: 'Urgent', days: 0 },
 ]
 
-/** Laundry is priced by weight. Garments are still counted per order for tracking. */
-export const PRICING_MODELS = [{ value: 'per_kg', label: 'Per kilogram', unit: 'kg' }]
-export const pricingUnit = () => 'kg'
+/**
+ * How a service is measured and charged. Each service picks one; "custom"
+ * lets the business type its own unit (e.g. "seat" for sofa cleaning).
+ *   decimals: whether quantities can be fractional (2.5 kg, 3.2 m²)
+ */
+export const PRICING_UNITS = [
+  { value: 'kg', label: 'By weight (kg)', unit: 'kg', plural: 'kg', decimals: true, example: 'Laundry, wash & fold' },
+  { value: 'pair', label: 'Per pair', unit: 'pair', plural: 'pairs', decimals: false, example: 'Shoes, sneakers, socks' },
+  { value: 'piece', label: 'Per piece / item', unit: 'piece', plural: 'pieces', decimals: false, example: 'Suits, duvets, blankets' },
+  { value: 'sqm', label: 'By area (m²)', unit: 'm²', plural: 'm²', decimals: true, example: 'Carpets, rugs' },
+  { value: 'panel', label: 'Per panel', unit: 'panel', plural: 'panels', decimals: false, example: 'Curtains' },
+  { value: 'job', label: 'Fixed price per job', unit: 'job', plural: 'jobs', decimals: false, example: 'Sofa set, mattress' },
+  { value: 'custom', label: 'Custom unit…', unit: '', plural: '', decimals: true, example: 'Any other unit you name' },
+]
+export const pricingUnitMeta = (value) => PRICING_UNITS.find((u) => u.value === value) ?? PRICING_UNITS[2]
+/** Display unit of a service or order line, e.g. "kg", "pair", "seat". */
+export const unitLabel = (svcOrLine) => (svcOrLine?.unit === 'custom' ? svcOrLine.unitLabel || 'unit' : pricingUnitMeta(svcOrLine?.unit).unit)
+/** "2 pairs", "6.5 kg", "1 seat" */
+export function formatQuantity(qty, svcOrLine) {
+  const meta = pricingUnitMeta(svcOrLine?.unit)
+  const n = Number(qty) || 0
+  if (svcOrLine?.unit === 'custom') return `${n} ${svcOrLine.unitLabel || 'unit'}${n === 1 || !svcOrLine.unitLabel ? '' : 's'}`
+  return `${n} ${n === 1 ? meta.unit : meta.plural}`
+}
+/** Older services/orders stored pricingModel instead of unit. */
+export const unitOf = (svc) => svc?.unit ?? (svc?.pricingModel === 'per_kg' ? 'kg' : svc?.pricingModel === 'fixed' ? 'job' : 'piece')
+
 export const DEFAULT_RATE_PER_KG = 50
 
 /* ---- Clients ---- */

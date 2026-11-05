@@ -22,11 +22,18 @@ export function searchTokens(...parts) {
 export const staffName = (id) => db.get('staff').find((s) => s.id === id)?.name ?? (id ? 'Former staff' : 'System')
 
 /** Adds display fields to a stored order (everything else is stored on the order). */
-export function enrichOrder(order, now = new Date()) {
+export function enrichOrder(raw, now = new Date()) {
+  // Orders saved before multi-service lines had one kg service.
+  const order = raw.lines ? raw : {
+    ...raw,
+    lines: raw.serviceId ? [{ id: 'l_legacy', serviceId: raw.serviceId, serviceName: raw.serviceName, unit: 'kg', unitLabel: '', quantity: raw.weightKg ?? 0, unitPrice: raw.ratePerKg ?? 0, minCharge: 0, total: raw.subtotal ?? 0, notes: '' }] : [],
+    serviceIds: raw.serviceId ? [raw.serviceId] : [],
+    serviceNames: raw.serviceName ? [raw.serviceName] : [],
+    serviceSummary: raw.serviceName ? `${raw.serviceName} (${raw.weightKg} kg)` : '',
+  }
   return {
     ...order,
     customer: { id: order.customerId, name: order.customerName, phone: order.customerPhone },
-    serviceNames: order.serviceName ? [order.serviceName] : [],
     isOverdue: isOrderOverdue(order, now),
     assignedName: order.assignedTo ? staffName(order.assignedTo) : 'Unassigned',
     createdByName: staffName(order.createdBy),

@@ -188,14 +188,18 @@ export const reportService = {
         row.orders += 1
         garmentMap.set(it.name, row)
       }))
+      // Per service: orders using it, quantity in its unit, and value of its lines (before surcharges/discounts).
       const serviceMap = new Map()
-      live.forEach((o) => {
-        const row = serviceMap.get(o.serviceId) ?? { id: o.serviceId, name: o.serviceName, orders: 0, kg: 0, garments: 0, revenue: 0 }
-        row.orders += 1
-        row.kg = Math.round((row.kg + o.weightKg) * 10) / 10
-        row.garments += o.garmentCount
-        row.revenue = roundMoney(row.revenue + o.total)
-        serviceMap.set(o.serviceId, row)
+      live.map((o) => enrichOrder(o)).forEach((o) => {
+        for (const l of o.lines) {
+          const row = serviceMap.get(l.serviceId) ?? { id: l.serviceId, name: l.serviceName, unit: l.unit, unitLabel: l.unitLabel, orders: 0, quantity: 0, kg: 0, garments: 0, revenue: 0 }
+          row.orders += 1
+          row.quantity = Math.round((row.quantity + l.quantity) * 10) / 10
+          if (l.unit === 'kg') row.kg = row.quantity
+          row.garments += o.garmentCount
+          row.revenue = roundMoney(row.revenue + (l.total ?? 0))
+          serviceMap.set(l.serviceId, row)
+        }
       })
       const staffRows = db.get('staff').map((s) => {
         const assigned = live.filter((o) => o.assignedTo === s.id)
@@ -204,7 +208,7 @@ export const reportService = {
           id: s.id, name: s.name, role: s.role, status: s.status,
           assigned: assigned.length,
           completed: assigned.filter((o) => ['ready', 'delivered'].includes(o.status)).length,
-          kg: Math.round(assigned.reduce((x, o) => x + o.weightKg, 0) * 10) / 10,
+          kg: Math.round(assigned.reduce((x, o) => x + (o.weightKg || 0), 0) * 10) / 10,
           garments: assigned.reduce((x, o) => x + o.garmentCount, 0),
           created: live.filter((o) => o.createdBy === s.id).length,
           paymentsRecorded: recorded.length,
@@ -214,7 +218,7 @@ export const reportService = {
 
       const expected = sum(payments, (p) => p.expectedAmount ?? p.amount)
       const billed = sum(live, (o) => o.total)
-      const kg = Math.round(live.reduce((x, o) => x + o.weightKg, 0) * 10) / 10
+      const kg = Math.round(live.reduce((x, o) => x + (o.weightKg || 0), 0) * 10) / 10
       return {
         range: { from: fromIso, to: toIso, granularity },
         financial: {

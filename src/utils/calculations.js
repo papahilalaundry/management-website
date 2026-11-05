@@ -8,17 +8,31 @@ import { roundMoney } from './formatCurrency'
 /** Weight is kept to 0.1 kg. */
 export const roundKg = (kg) => Math.round((Number(kg) || 0) * 10) / 10
 
-/** Total garments in an order (garments are tracked for counting only, not priced). */
+/** Total garments/items listed on an order (tracked for counting only, not priced). */
 export const garmentCount = (items = []) => items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
 
 /**
- * @param {object} input  { weightKg, ratePerKg, priority, extraCharges, discount, taxRate }
+ * One service line of an order: quantity × unit price, but never less than
+ * the service's minimum charge (if it has one).
+ * line: { unit, quantity, unitPrice, minCharge }
+ */
+export function lineTotal(line) {
+  const qty = Math.max(0, Number(line.quantity) || 0)
+  const raw = roundMoney(qty * Math.max(0, Number(line.unitPrice) || 0))
+  const min = Math.max(0, Number(line.minCharge) || 0)
+  return qty > 0 && raw < min ? roundMoney(min) : raw
+}
+
+/** Total kilograms across the weight-priced lines of an order. */
+export const totalKg = (lines = []) => roundKg(lines.filter((l) => l.unit === 'kg').reduce((s, l) => s + (Number(l.quantity) || 0), 0))
+
+/**
+ * @param {object} input  { lines, priority, extraCharges, discount, taxRate }
  * @param {object} pricing settings.pricing { expressSurcharge, urgentSurcharge } (percentages)
  */
 export function calcOrderTotals(input, pricing = {}) {
-  const weightKg = roundKg(input.weightKg)
-  const ratePerKg = Math.max(0, Number(input.ratePerKg) || 0)
-  const subtotal = roundMoney(weightKg * ratePerKg)
+  const lines = input.lines || []
+  const subtotal = roundMoney(lines.reduce((sum, l) => sum + lineTotal(l), 0))
   const surchargeRate =
     input.priority === 'express'
       ? Number(pricing.expressSurcharge) || 0
@@ -33,7 +47,7 @@ export function calcOrderTotals(input, pricing = {}) {
   const taxable = roundMoney(gross - discount)
   const tax = roundMoney((taxable * taxRate) / 100)
   const total = roundMoney(taxable + tax)
-  return { weightKg, ratePerKg, subtotal, surchargeRate, surcharge, extraCharges, discount, taxRate, tax, total }
+  return { weightKg: totalKg(lines), subtotal, surchargeRate, surcharge, extraCharges, discount, taxRate, tax, total }
 }
 
 export function paymentStatusFor(total, paid) {

@@ -2,7 +2,7 @@ import { LogoMark } from '../layout/Logo'
 import { formatCurrency } from '../../utils/formatCurrency'
 import { formatDate, formatDateTime } from '../../utils/formatDate'
 import { displayPhone } from '../../utils/validators'
-import { isMpesaMethod, methodLabel, stageLabel } from '../../data/constants'
+import { formatQuantity, isMpesaMethod, methodLabel, stageLabel } from '../../data/constants'
 
 function Header({ business, title, number }) {
   const contact = [business.phone && `Tel: ${business.phone}`, business.email].filter(Boolean).join(' · ')
@@ -58,12 +58,28 @@ export function OrderReceipt({ order, business }) {
         {order.status === 'cancelled' && (<><p className="text-slate-500">Status</p><p className="text-right font-bold text-red-600">CANCELLED</p></>)}
       </div>
 
-      <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-[12.5px]">
-        <span><span className="font-semibold">{order.serviceName}</span> · {order.weightKg} kg × {formatCurrency(order.ratePerKg, { decimals: 0 })}/kg</span>
-        <span className="font-bold tabular-nums">{formatCurrency(order.subtotal)}</span>
-      </div>
-
       <table className="mt-3 w-full text-[12px]">
+        <thead>
+          <tr className="border-b border-slate-200 text-left text-[10.5px] uppercase tracking-wider text-slate-500">
+            <th className="py-2 font-semibold">Service</th>
+            <th className="py-2 text-right font-semibold">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {order.lines.map((l) => (
+            <tr key={l.id} className="border-b border-slate-100 align-top">
+              <td className="py-1.5 pr-2">
+                <p className="font-semibold">{l.serviceName}</p>
+                <p className="text-[10.5px] text-slate-500">{formatQuantity(l.quantity, l)} × {formatCurrency(l.unitPrice, { decimals: 0 })}</p>
+                {l.notes && <p className="text-[10.5px] italic text-slate-400">{l.notes}</p>}
+              </td>
+              <td className="py-1.5 text-right tabular-nums">{formatCurrency(l.total)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {order.items.length > 0 && <table className="mt-3 w-full text-[12px]">
         <thead>
           <tr className="border-b border-slate-200 text-left text-[10.5px] uppercase tracking-wider text-slate-500">
             <th className="py-2 font-semibold">Garment</th>
@@ -86,10 +102,10 @@ export function OrderReceipt({ order, business }) {
             <td className="py-1.5 text-right font-semibold tabular-nums text-ink">{order.garmentCount}</td>
           </tr>
         </tbody>
-      </table>
+      </table>}
 
       <div className="mt-3 space-y-1">
-        <Row label={`Laundry (${order.weightKg} kg)`} value={formatCurrency(order.subtotal)} />
+        <Row label="Services subtotal" value={formatCurrency(order.subtotal)} />
         {order.surcharge > 0 && <Row label={`${order.priority === 'urgent' ? 'Urgent' : 'Express'} surcharge (${order.surchargeRate}%)`} value={formatCurrency(order.surcharge)} />}
         {order.extraCharges > 0 && <Row label="Delivery / other charges" value={formatCurrency(order.extraCharges)} />}
         {order.discount > 0 && <Row label="Discount" value={`− ${formatCurrency(order.discount)}`} />}

@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight, Ban, CalendarDays, ClipboardList, History, Mail, MapPin, MessageSquareText, MoreHorizontal, Pencil, Phone,
   Printer, RefreshCw, Shirt, StickyNote, Truck, User, UserCog, Wallet, Zap, Clock, PackageCheck, CircleDollarSign, TriangleAlert,
-  Scale, Star, MessageSquareQuote, CheckCheck, WashingMachine,
+  Scale, Star, MessageSquareQuote, CheckCheck, WashingMachine, Layers,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { notificationService, orderService } from '../services'
@@ -22,7 +22,7 @@ import { Field, Textarea } from '../components/ui/Field'
 import { STATUS_META } from '../data/statusMeta'
 import OrderProgress from '../components/orders/OrderProgress'
 import { useOrderActions } from '../components/orders/useOrderActions'
-import { FEEDBACK_RATINGS, ORDER_STAGES, SMS_TEMPLATES, stageIndex, stageLabel } from '../data/constants'
+import { FEEDBACK_RATINGS, formatQuantity, ORDER_STAGES, SMS_TEMPLATES, stageIndex, stageLabel, unitLabel } from '../data/constants'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate, formatDateTime, timeAgo } from '../utils/formatDate'
 import { displayPhone } from '../utils/validators'
@@ -321,9 +321,34 @@ export default function OrderDetails() {
 
       <div className="grid items-start gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
-          {/* Garments */}
+          {/* Services */}
           <Card>
-            <CardHeader title="Garments" description={`${order.garmentCount} pieces across ${order.items.length} lines · ${order.weightKg} kg in total. Garments are counted for tracking; the price is by weight.`} icon={Shirt} />
+            <CardHeader title="Services" description={`${order.lines.length} service${order.lines.length === 1 ? '' : 's'}${order.weightKg > 0 ? ` · ${order.weightKg} kg of laundry` : ''}`} icon={Layers} />
+            <ul className="divide-y divide-line border-t border-line">
+              {order.lines.map((l) => {
+                const raw = Math.round(l.quantity * l.unitPrice * 100) / 100
+                const minApplied = l.minCharge > 0 && raw < l.minCharge
+                return (
+                  <li key={l.id} className="flex items-start justify-between gap-3 px-4 py-3.5 sm:px-5">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">{l.serviceName}</p>
+                      <p className="text-[12.5px] text-muted">
+                        {formatQuantity(l.quantity, l)} × {formatCurrency(l.unitPrice, { decimals: 0 })}/{unitLabel(l)}
+                        {minApplied && <span className="font-semibold text-amber-700"> · minimum charge applied</span>}
+                      </p>
+                      {l.notes && <p className="mt-1 flex items-start gap-1 text-[12px] text-blue-700"><StickyNote size={12} className="mt-0.5 shrink-0" /> {l.notes}</p>}
+                    </div>
+                    <p className="shrink-0 font-bold tabular-nums text-ink">{formatCurrency(l.total ?? raw)}</p>
+                  </li>
+                )
+              })}
+            </ul>
+          </Card>
+
+          {/* Garments & items (tracking) */}
+          {order.items.length > 0 && (
+          <Card>
+            <CardHeader title="Garments & items" description={`${order.garmentCount} pieces across ${order.items.length} lines — counted for tracking, not priced.`} icon={Shirt} />
             {/* Phones: one card per garment line */}
             <ul className="divide-y divide-line border-t border-line md:hidden">
               {order.items.map((it) => (
@@ -383,6 +408,7 @@ export default function OrderDetails() {
             </div>
             <p className="border-t border-line px-5 py-3 text-xs text-muted">The overall order status follows the least-advanced garment. Moving the order forward also moves any garments behind it.</p>
           </Card>
+          )}
 
           {/* Timeline */}
           <Card>
@@ -436,7 +462,7 @@ export default function OrderDetails() {
             <CardHeader title="Payment summary" icon={CircleDollarSign} action={<PaymentStatusBadge status={order.paymentStatus} />} />
             <CardBody className="space-y-4">
               <div className="space-y-1.5 text-[13px]">
-                <div className="flex justify-between text-slate-600"><span>{order.weightKg} kg × {formatCurrency(order.ratePerKg, { decimals: 0 })}/kg</span><span className="tabular-nums">{formatCurrency(order.subtotal)}</span></div>
+                <div className="flex justify-between text-slate-600"><span>Services subtotal</span><span className="tabular-nums">{formatCurrency(order.subtotal)}</span></div>
                 {order.surcharge > 0 && <div className="flex justify-between text-slate-600"><span>Priority surcharge ({order.surchargeRate}%)</span><span className="tabular-nums">{formatCurrency(order.surcharge)}</span></div>}
                 {order.extraCharges > 0 && <div className="flex justify-between text-slate-600"><span>Additional charges</span><span className="tabular-nums">{formatCurrency(order.extraCharges)}</span></div>}
                 {order.discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span className="tabular-nums">− {formatCurrency(order.discount)}</span></div>}
@@ -493,8 +519,8 @@ export default function OrderDetails() {
           <Card>
             <CardHeader title="Order details" icon={ClipboardList} />
             <CardBody className="divide-y divide-line pt-0">
-              <InfoRow icon={WashingMachine} label="Service">{order.serviceName} <span className="text-muted">· {formatCurrency(order.ratePerKg, { decimals: 0 })}/kg</span></InfoRow>
-              <InfoRow icon={Scale} label="Weight">{order.weightKg} kg · {order.garmentCount} garment{order.garmentCount === 1 ? '' : 's'}</InfoRow>
+              <InfoRow icon={WashingMachine} label="Services">{order.serviceSummary}</InfoRow>
+              {(order.weightKg > 0 || order.garmentCount > 0) && <InfoRow icon={Scale} label="Load">{[order.weightKg > 0 && `${order.weightKg} kg`, order.garmentCount > 0 && `${order.garmentCount} item${order.garmentCount === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}</InfoRow>}
               <InfoRow icon={CalendarDays} label="Date received">{formatDateTime(order.receivedAt)}</InfoRow>
               <InfoRow icon={Clock} label="Expected completion"><span className={order.isOverdue ? 'text-red-600' : ''}>{formatDateTime(order.dueAt)}</span></InfoRow>
               {order.pickupAt && <InfoRow icon={PackageCheck} label="Pickup">{formatDateTime(order.pickupAt)}</InfoRow>}

@@ -28,9 +28,8 @@ const EXPORT_COLUMNS = [
   { header: 'Order ID', value: (o) => o.id },
   { header: 'Client', value: (o) => o.customer.name },
   { header: 'Phone', value: (o) => o.customer.phone },
-  { header: 'Service', value: (o) => o.serviceName },
-  { header: 'Weight (kg)', value: (o) => o.weightKg },
-  { header: 'Rate/kg (KES)', value: (o) => o.ratePerKg },
+  { header: 'Services', value: (o) => o.serviceSummary || (o.serviceNames ?? []).join(', ') },
+  { header: 'Weight (kg)', value: (o) => o.weightKg || 0 },
   { header: 'Garments', value: (o) => o.garmentCount },
   { header: 'Priority', value: (o) => o.priority },
   { header: 'Received', value: (o) => formatDate(o.receivedAt) },
@@ -106,7 +105,7 @@ export default function Orders() {
       else if (kind === 'csv') exportCsv(rows, EXPORT_COLUMNS, 'papa-hila-orders')
       else {
         const { downloadReportPdf } = await import('../utils/pdf')
-        const cols = ['Order ID', 'Client', 'Weight (kg)', 'Garments', 'Received', 'Due', 'Total (KES)', 'Balance (KES)', 'Status']
+        const cols = ['Order ID', 'Client', 'Services', 'Garments', 'Received', 'Due', 'Total (KES)', 'Balance (KES)', 'Status']
         const defs = cols.map((h) => EXPORT_COLUMNS.find((col) => col.header === h))
         await downloadReportPdf({
           title: 'Orders Report',
@@ -119,8 +118,8 @@ export default function Orders() {
             table: {
               head: cols,
               body: rows.map((o) => defs.map((d) => { const v = d.value(o); return d.header.includes('KES') ? formatCurrency(v) : String(v) })),
-              foot: ['Total', '', `${Math.round(rows.reduce((s, o) => s + o.weightKg, 0) * 10) / 10}`, String(rows.reduce((s, o) => s + o.garmentCount, 0)), '', '', formatCurrency(rows.reduce((s, o) => s + o.total, 0)), formatCurrency(rows.reduce((s, o) => s + o.balance, 0)), ''],
-              align: ['left', 'left', 'right', 'right', 'left', 'left', 'right', 'right', 'left'],
+              foot: ['Total', '', `${Math.round(rows.reduce((s, o) => s + (o.weightKg || 0), 0) * 10) / 10} kg laundry`, String(rows.reduce((s, o) => s + o.garmentCount, 0)), '', '', formatCurrency(rows.reduce((s, o) => s + o.total, 0)), formatCurrency(rows.reduce((s, o) => s + o.balance, 0)), ''],
+              align: ['left', 'left', 'left', 'right', 'left', 'left', 'right', 'right', 'left'],
             },
           }],
         })

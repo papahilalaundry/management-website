@@ -6,7 +6,7 @@ import { format } from 'date-fns'
 import { formatCurrency } from './formatCurrency'
 import { formatDate, formatDateTime } from './formatDate'
 import { displayPhone } from './validators'
-import { isMpesaMethod, methodLabel } from '../data/constants'
+import { formatQuantity, isMpesaMethod, methodLabel } from '../data/constants'
 
 const NAVY = [20, 43, 74]
 const BLUE = [37, 99, 235]
@@ -86,11 +86,20 @@ export async function downloadOrderReceiptPdf(order, business) {
     ['Expected completion', formatDateTime(order.dueAt)],
     ...(order.deliveryAt ? [['Delivery date', formatDateTime(order.deliveryAt)]] : []),
     ...(order.deliveredAt ? [['Delivered on', formatDateTime(order.deliveredAt)]] : []),
-    ['Service', `${order.serviceName} - ${order.weightKg} kg x ${formatCurrency(order.ratePerKg, { decimals: 0 })}/kg`],
     ...(order.status === 'cancelled' ? [['Status', 'CANCELLED']] : []),
   ])
   autoTable(doc, {
     startY: y + 4,
+    head: [['Service', 'Quantity', 'Price', 'Amount']],
+    body: order.lines.map((l) => [safe(l.serviceName + (l.notes ? `\n${l.notes}` : '')), formatQuantity(l.quantity, l), formatCurrency(l.unitPrice, { decimals: 0 }), formatCurrency(l.total)]),
+    headStyles: { fillColor: NAVY, fontSize: 8 },
+    styles: { fontSize: 8, cellPadding: 2 },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    margin: { left: 12, right: 12 },
+  })
+  y = doc.lastAutoTable.finalY
+  if (order.items.length) autoTable(doc, {
+    startY: y + 3,
     head: [['Garment', 'Pieces']],
     body: [
       ...order.items.map((it) => [safe(it.name + (it.instructions ? `\n${it.instructions}` : '') + (it.condition ? `\nCondition: ${it.condition}` : '')), String(it.quantity)]),
@@ -115,7 +124,7 @@ export async function downloadOrderReceiptPdf(order, business) {
     y = doc.lastAutoTable.finalY + 3
   }
   const totals = [
-    [`Laundry (${order.weightKg} kg)`, formatCurrency(order.subtotal)],
+    ['Services subtotal', formatCurrency(order.subtotal)],
     ...(order.surcharge > 0 ? [[`Priority surcharge (${order.surchargeRate}%)`, formatCurrency(order.surcharge)]] : []),
     ...(order.extraCharges > 0 ? [['Delivery / other charges', formatCurrency(order.extraCharges)]] : []),
     ...(order.discount > 0 ? [['Discount', `- ${formatCurrency(order.discount)}`]] : []),
