@@ -6,7 +6,7 @@ import { useSettings } from '../context/SettingsContext'
 import { LogoMark } from '../components/layout/Logo'
 import Button from '../components/ui/Button'
 import { Checkbox, Field, Input } from '../components/ui/Field'
-import { LOGIN_EMAIL_DOMAIN, normalizeUsername } from '../data/constants'
+import { normalizeUsername } from '../data/constants'
 
 /**
  * Staff sign in with their username only; the login email
@@ -74,7 +74,7 @@ export default function Login() {
           <form onSubmit={submit} noValidate className="mt-8 space-y-4">
             <Field label="Username" error={errors.username}>
               {(p) => (
-                <div className="group relative flex items-stretch">
+                <div className="group relative">
                   <User size={16} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-brand" aria-hidden />
                   <Input
                     {...p}
@@ -86,11 +86,8 @@ export default function Login() {
                     placeholder="e.g. grace"
                     value={form.username}
                     onChange={set('username')}
-                    className="h-11 min-w-0 flex-1 rounded-r-none pl-10"
+                    className="h-11 pl-10"
                   />
-                  <span className="flex shrink-0 select-none items-center rounded-r-lg border border-l-0 border-line bg-slate-50 px-2.5 text-[12.5px] font-medium text-slate-500" title="Added automatically">
-                    @{LOGIN_EMAIL_DOMAIN}
-                  </span>
                 </div>
               )}
             </Field>

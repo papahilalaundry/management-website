@@ -18,7 +18,7 @@ import { LogoMark } from '../components/layout/Logo'
 import { RoleBadge } from '../components/shared/StatusBadges'
 import { DATE_FORMAT_OPTIONS } from '../utils/formatDate'
 import { formatCurrency } from '../utils/formatCurrency'
-import { LOGIN_EMAIL_DOMAIN, unitLabel } from '../data/constants'
+import { unitLabel } from '../data/constants'
 import { PERMISSIONS } from '../utils/permissions'
 
 function useSectionForm(initial) {
@@ -106,7 +106,7 @@ function ProfileTab() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Full name" required error={s.errors.name}>{(p) => <Input {...p} value={s.form.name} onChange={s.set('name')} />}</Field>
           <Field label="Phone" error={s.errors.phone}>{(p) => <Input {...p} value={s.form.phone} onChange={s.set('phone')} />}</Field>
-          <Field label="Username" hint={`Usernames can’t be changed. Your login is ${user.username}@${LOGIN_EMAIL_DOMAIN}.`}>{(p) => <Input {...p} value={user.username ?? ''} disabled />}</Field>
+          <Field label="Username" hint="Usernames can’t be changed. Sign in with this username.">{(p) => <Input {...p} value={user.username ?? ''} disabled />}</Field>
           <Field label="Role" hint="Roles can only be changed by an administrator — never by yourself.">{(p) => <Input {...p} value={user.role[0].toUpperCase() + user.role.slice(1)} disabled />}</Field>
         </div>
       </SectionCard>

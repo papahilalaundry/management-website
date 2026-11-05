@@ -23,21 +23,16 @@ import { MiniStat } from '../components/shared/StatCard'
 import { RoleBadge } from '../components/shared/StatusBadges'
 import ActivityFeed from '../components/shared/ActivityFeed'
 import OrderTable from '../components/orders/OrderTable'
-import { LOGIN_EMAIL_DOMAIN, normalizeUsername, ROLE_OPTIONS } from '../data/constants'
+import { normalizeUsername, ROLE_OPTIONS } from '../data/constants'
 import { formatNumber } from '../utils/formatCurrency'
 import { formatDate, timeAgo } from '../utils/formatDate'
 import { validateStaff } from '../utils/validators'
 
 const EMPTY = { name: '', username: '', password: '', phone: '', role: 'staff', title: '', status: 'active' }
 
-/** Username input with the fixed login domain shown after it. */
+/** Username input. The login email behind it is created automatically. */
 function UsernameInput({ value, onChange, ...p }) {
-  return (
-    <div className="flex items-stretch">
-      <Input {...p} value={value} onChange={onChange} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="e.g. grace" className="min-w-0 flex-1 rounded-r-none" />
-      <span className="flex shrink-0 select-none items-center rounded-r-lg border border-l-0 border-line bg-slate-50 px-2.5 text-xs font-medium text-slate-500">@{LOGIN_EMAIL_DOMAIN}</span>
-    </div>
-  )
+  return <Input {...p} value={value} onChange={onChange} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="e.g. grace" />
 }
 
 function StaffFormModal({ open, onClose, member, onSaved }) {
