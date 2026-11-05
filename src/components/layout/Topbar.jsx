@@ -15,7 +15,7 @@ import { NotificationIcon } from '../shared/NotificationIcon'
 import { timeAgo } from '../../utils/formatDate'
 
 function NotificationBell() {
-  const { notifications, unread, markRead, markAllRead } = useNotifications()
+  const { notifications, unread, markRead, markAllRead, reload } = useNotifications()
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
   const navigate = useNavigate()
@@ -37,7 +37,10 @@ function NotificationBell() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) reload()
+          setOpen(!open)
+        }}
         className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-ink lg:rounded-lg"
         aria-label={`Notifications, ${unread} unread`}
         aria-expanded={open}
@@ -63,7 +66,7 @@ function NotificationBell() {
             )}
           </div>
           <ul className="max-h-[60vh] divide-y sm:max-h-[380px] divide-line overflow-y-auto">
-            {latest.length === 0 && <li className="px-4 py-8 text-center text-sm text-muted">You’re all caught up.</li>}
+            {latest.length === 0 && <li className="px-4 py-8 text-center text-sm text-muted">No notifications yet.</li>}
             {latest.map((n) => (
               <li key={n.id}>
                 <button
@@ -181,7 +184,7 @@ export default function Topbar() {
               </button>
             }
             items={[
-              { heading: user.email },
+              { heading: `Signed in as ${user.username ?? user.name}` },
               { label: 'My profile', icon: User, onClick: () => navigate('/settings?tab=profile') },
               { label: 'Settings', icon: Settings, onClick: () => navigate('/settings') },
               { divider: true },

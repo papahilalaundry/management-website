@@ -1,58 +1,34 @@
 /**
- * Simulated HTTP layer.
- *
- * `request()` wraps every mock endpoint so it behaves like a network call:
- * it is async, has latency, can fail, enforces auth/permissions and returns
- * deep copies (so UI code can never mutate the "database" by accident).
- *
- * To connect a real backend, replace the body of each service function with
- * a fetch/axios call (see README) — the UI only depends on the function
- * signatures and the ApiError shape.
+ * Request wrapper used by every service: checks the signed-in user and their
+ * role permission, then runs the Firestore work and normalises errors.
+ * (The security rules in backend/firestore.rules enforce access on the server.)
  */
-import { db, readSession } from './storage'
+import { db, getSession } from './storage'
 import { can } from '../utils/permissions'
+import { ApiError, toApiError } from './errors'
 
-export class ApiError extends Error {
-  constructor(message, { status = 400, fields = null } = {}) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-    this.fields = fields // { fieldName: message } for validation errors
-  }
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+export { ApiError, validationError, notFound } from './errors'
 
 export function currentUser() {
-  const session = readSession()
+  const session = getSession()
   if (!session) return null
-  const user = db.get('staff').find((s) => s.id === session.userId)
+  const user = db.get('staff').find((s) => s.id === session.staffId)
   return user && user.status === 'active' ? user : null
 }
 
 /**
- * @param {Function} handler  (user) => result
- * @param {object}   options  { permission, latency: [min,max], auth }
+ * @param {Function} handler  async (user) => result
+ * @param {object}   options  { permission, auth = true }
  */
-export async function request(handler, { permission, latency = [180, 420], auth = true } = {}) {
-  const system = db.get('settings')?.system ?? {}
-  if (system.latency !== false) await sleep(latency[0] + Math.random() * (latency[1] - latency[0]))
-  if (system.simulateErrors && Math.random() < 0.12) {
-    throw new ApiError('Network error: the server did not respond. Please try again.', { status: 503 })
-  }
+export async function request(handler, { permission, auth = true } = {}) {
   const user = auth ? currentUser() : null
   if (auth && !user) throw new ApiError('Your session has expired. Please sign in again.', { status: 401 })
   if (permission && !can(user, permission)) {
     throw new ApiError('You do not have permission to perform this action.', { status: 403 })
   }
-  const result = await handler(user)
-  return result === undefined ? result : structuredClone(result)
-}
-
-export function validationError(fields, message = 'Please correct the highlighted fields.') {
-  return new ApiError(message, { status: 422, fields })
-}
-
-export function notFound(what) {
-  return new ApiError(`${what} not found.`, { status: 404 })
+  try {
+    return await handler(user)
+  } catch (err) {
+    throw toApiError(err)
+  }
 }

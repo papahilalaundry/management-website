@@ -1,18 +1,24 @@
 /**
- * Pure business calculations. These are shared by the mock API and the UI
- * (e.g. the live order summary) so totals are always computed the same way.
+ * Pure business calculations, shared by the services and the UI (e.g. the
+ * live order summary) so totals are always computed the same way.
  */
-import { OPEN_STATUSES, stageIndex, STAGE_VALUES } from '../data/constants'
+import { OPEN_STATUSES, REGULAR_AFTER_ORDERS, stageIndex, STAGE_VALUES } from '../data/constants'
 import { roundMoney } from './formatCurrency'
 
-export const lineTotal = (item) => roundMoney((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))
+/** Weight is kept to 0.1 kg. */
+export const roundKg = (kg) => Math.round((Number(kg) || 0) * 10) / 10
+
+/** Total garments in an order (garments are tracked for counting only, not priced). */
+export const garmentCount = (items = []) => items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
 
 /**
- * @param {object} input  { items, priority, extraCharges, discount, taxRate }
+ * @param {object} input  { weightKg, ratePerKg, priority, extraCharges, discount, taxRate }
  * @param {object} pricing settings.pricing { expressSurcharge, urgentSurcharge } (percentages)
  */
 export function calcOrderTotals(input, pricing = {}) {
-  const subtotal = roundMoney((input.items || []).reduce((sum, it) => sum + lineTotal(it), 0))
+  const weightKg = roundKg(input.weightKg)
+  const ratePerKg = Math.max(0, Number(input.ratePerKg) || 0)
+  const subtotal = roundMoney(weightKg * ratePerKg)
   const surchargeRate =
     input.priority === 'express'
       ? Number(pricing.expressSurcharge) || 0
@@ -27,7 +33,7 @@ export function calcOrderTotals(input, pricing = {}) {
   const taxable = roundMoney(gross - discount)
   const tax = roundMoney((taxable * taxRate) / 100)
   const total = roundMoney(taxable + tax)
-  return { subtotal, surchargeRate, surcharge, extraCharges, discount, taxRate, tax, total }
+  return { weightKg, ratePerKg, subtotal, surchargeRate, surcharge, extraCharges, discount, taxRate, tax, total }
 }
 
 export function paymentStatusFor(total, paid) {
@@ -43,10 +49,22 @@ export function isOrderOverdue(order, now = new Date()) {
 
 /** Overall order status is the least-advanced status among its garments. */
 export function deriveOrderStatusFromGarments(items) {
-  if (!items?.length) return 'received'
+  if (!items?.length) return null
   const min = Math.min(...items.map((i) => Math.max(0, stageIndex(i.status))))
   return STAGE_VALUES[min]
 }
+
+/* ---- Client visit tracking ------------------------------------------------ */
+export const clientTypeFor = (orderCount) => ((orderCount || 0) >= REGULAR_AFTER_ORDERS ? 'regular' : 'new')
+
+/** Average days between drop-offs, or null with fewer than two visits. */
+export function avgIntervalDays(firstOrderAt, lastOrderAt, orderCount) {
+  if (!firstOrderAt || !lastOrderAt || (orderCount || 0) < 2) return null
+  const days = (new Date(lastOrderAt) - new Date(firstOrderAt)) / 864e5
+  return Math.round((days / (orderCount - 1)) * 10) / 10
+}
+
+export const daysSince = (iso, now = new Date()) => (iso ? Math.floor((now - new Date(iso)) / 864e5) : null)
 
 export function percentChange(current, previous) {
   if (!previous) return current ? 100 : 0

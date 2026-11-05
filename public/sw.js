@@ -1,7 +1,7 @@
 /*
  * Papa Hila service worker: makes the installed app open instantly and keep
- * working without a connection. App data lives in the browser (localStorage),
- * so caching the app shell is all that is needed for offline use.
+ * working without a connection. Business data comes from Firestore, which keeps
+ * its own offline copy in IndexedDB, so only the app shell is cached here.
  *
  * Bump CACHE when this file's caching strategy changes. Built assets are
  * content-hashed, so normal deploys do not need a bump.

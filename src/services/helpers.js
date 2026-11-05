@@ -1,88 +1,110 @@
 /**
- * Internal helpers shared by the mock services (not used by UI components).
- * In a real backend, this logic would live on the server.
+ * Internal helpers shared by the services (not used by UI components).
  */
-import { db } from './storage'
-import { formatId } from '../utils/generateIds'
-import { isOrderOverdue, paymentStatusFor, sum } from '../utils/calculations'
+import { db, docRef, newBatch } from './storage'
+import { avgIntervalDays, clientTypeFor, isOrderOverdue } from '../utils/calculations'
 import { roundMoney, formatCurrency } from '../utils/formatCurrency'
 import { formatDate } from '../utils/formatDate'
 import { SMS_TEMPLATES } from '../data/constants'
 
-const MAX_ACTIVITIES = 600
-const MAX_NOTIFICATIONS = 200
-
 export const nowIso = () => new Date().toISOString()
 
-/* ---- lookups ------------------------------------------------------------ */
-export function buildContext() {
-  const customers = new Map(db.get('customers').map((c) => [c.id, c]))
-  const staff = new Map(db.get('staff').map((s) => [s.id, s]))
-  const paidByOrder = new Map()
-  for (const p of db.get('payments')) paidByOrder.set(p.orderId, (paidByOrder.get(p.orderId) || 0) + p.amount)
-  return { customers, staff, paidByOrder, now: new Date() }
+/** Unique, roughly time-ordered id for log-style records (activities, notifications, SMS). */
+export const logId = (prefix) => `${prefix}-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+
+/** Lowercase words of a name, plus the full lowercase name, for prefix/word search. */
+export function searchTokens(...parts) {
+  const words = parts.filter(Boolean).join(' ').toLowerCase().split(/[\s,.-]+/).filter(Boolean)
+  return [...new Set(words)]
 }
 
-export const staffName = (ctx, id) => ctx.staff.get(id)?.name ?? 'System'
+/* ---- lookups ------------------------------------------------------------ */
+export const staffName = (id) => db.get('staff').find((s) => s.id === id)?.name ?? (id ? 'Former staff' : 'System')
 
-/** Adds derived fields (customer, paid, balance, statuses) to a stored order. */
-export function enrichOrder(order, ctx = buildContext()) {
-  const c = ctx.customers.get(order.customerId)
-  const amountPaid = roundMoney(ctx.paidByOrder.get(order.id) || 0)
-  const cancelled = order.status === 'cancelled'
-  const balance = cancelled ? 0 : roundMoney(Math.max(0, order.total - amountPaid))
+/** Adds display fields to a stored order (everything else is stored on the order). */
+export function enrichOrder(order, now = new Date()) {
   return {
     ...order,
-    customer: c ? { id: c.id, name: c.name, phone: c.phone, email: c.email, address: c.address } : { id: order.customerId, name: 'Unknown customer', phone: '' },
-    amountPaid,
-    balance,
-    paymentStatus: cancelled && amountPaid === 0 ? 'unpaid' : paymentStatusFor(order.total, amountPaid),
-    garmentCount: order.items.reduce((s, i) => s + (i.pricingModel === 'per_kg' ? 1 : Number(i.quantity) || 0), 0),
-    serviceNames: [...new Set(order.items.map((i) => i.serviceName))],
-    isOverdue: isOrderOverdue(order, ctx.now),
-    assignedName: staffName(ctx, order.assignedTo),
-    createdByName: staffName(ctx, order.createdBy),
+    customer: { id: order.customerId, name: order.customerName, phone: order.customerPhone },
+    serviceNames: order.serviceName ? [order.serviceName] : [],
+    isOverdue: isOrderOverdue(order, now),
+    assignedName: order.assignedTo ? staffName(order.assignedTo) : 'Unassigned',
+    createdByName: staffName(order.createdBy),
   }
 }
 
-/** Outstanding balance across a customer's non-cancelled orders. */
-export function customerOutstanding(customerId, ctx = buildContext()) {
-  return sum(
-    db.get('orders').filter((o) => o.customerId === customerId && o.status !== 'cancelled'),
-    (o) => Math.max(0, o.total - (ctx.paidByOrder.get(o.id) || 0)),
-  )
+/** Adds derived visit fields to a stored customer. */
+export function enrichCustomer(c) {
+  return {
+    ...c,
+    totalOrders: c.orderCount ?? 0,
+    totalSpent: c.totalPaid ?? 0,
+    lastOrderAt: c.lastOrderAt ?? null,
+    clientType: clientTypeFor(c.orderCount),
+    avgIntervalDays: avgIntervalDays(c.firstOrderAt, c.lastOrderAt, c.orderCount),
+  }
 }
 
-/* ---- activity log ------------------------------------------------------- */
-export function logActivity(type, message, user, extra = {}) {
-  const n = db.nextCounter('activity')
-  const entry = { id: `ACT-${n}`, type, message, at: nowIso(), by: user?.id ?? null, ...extra }
-  db.update('activities', (list) => [entry, ...list].slice(0, MAX_ACTIVITIES))
+/**
+ * Returns the customer fields to write after a change.
+ * delta: { orders: ±1, orderAt (iso, for new orders), billed, paid, outstanding }
+ */
+export function customerAfter(c, delta) {
+  const orderCount = Math.max(0, (c.orderCount || 0) + (delta.orders || 0))
+  let { firstOrderAt = null, lastOrderAt = null } = c
+  if (delta.orderAt) {
+    if (!firstOrderAt || delta.orderAt < firstOrderAt) firstOrderAt = delta.orderAt
+    if (!lastOrderAt || delta.orderAt > lastOrderAt) lastOrderAt = delta.orderAt
+  }
+  return {
+    orderCount,
+    firstOrderAt,
+    lastOrderAt,
+    totalBilled: roundMoney((c.totalBilled || 0) + (delta.billed || 0)),
+    totalPaid: roundMoney((c.totalPaid || 0) + (delta.paid || 0)),
+    outstanding: roundMoney(Math.max(0, (c.outstanding || 0) + (delta.outstanding || 0))),
+    clientType: clientTypeFor(orderCount),
+    avgIntervalDays: avgIntervalDays(firstOrderAt, lastOrderAt, orderCount),
+    updatedAt: nowIso(),
+  }
+}
+
+/* ---- writes that ride along with a transaction or batch ------------------ */
+/** Runs fn(batch) and commits, or uses the given writer if one is passed. */
+export async function withWriter(writer, fn) {
+  if (writer) return fn(writer)
+  const batch = newBatch()
+  const out = fn(batch)
+  await batch.commit()
+  return out
+}
+
+export function logActivity(writer, type, message, user, extra = {}) {
+  const entry = { id: logId('ACT'), type, message, at: nowIso(), by: user?.id ?? null, ...extra }
+  writer.set(docRef('activities', entry.id), entry)
   return entry
 }
 
-/* ---- notifications ------------------------------------------------------ */
 const CATEGORY_PREF = {
   new_order: 'orders', order_ready: 'orders', overdue: 'overdue', payment: 'payments',
   outstanding: 'payments', low_stock: 'lowStock',
 }
 
-export function pushNotification(category, title, message, link) {
+export function pushNotification(writer, category, title, message, link) {
   const prefs = db.get('settings').notifications
   const prefKey = CATEGORY_PREF[category]
   if (prefKey && prefs[prefKey] === false) return null
-  const n = db.nextCounter('notification')
-  const entry = { id: formatId('NTF', n), category, title, message, link, createdAt: nowIso(), read: false }
-  db.update('notifications', (list) => [entry, ...list].slice(0, MAX_NOTIFICATIONS))
+  const entry = { id: logId('NTF'), category, title, message, link, createdAt: nowIso(), read: false }
+  writer.set(docRef('notifications', entry.id), entry)
   return entry
 }
 
-/* ---- simulated SMS ------------------------------------------------------ */
 /**
  * DEMO ONLY — no SMS is actually sent. The message is rendered from a template
  * and stored in the SMS log so it can be previewed in the UI.
+ * customer: { id, name, phone }
  */
-export function sendSimulatedSms(templateKey, { customer, order, amount, balance }, user) {
+export function sendSimulatedSms(writer, templateKey, { customer, order, amount, balance }, user) {
   const prefs = db.get('settings').notifications
   if (!prefs.sms || !customer) return null
   const tpl = SMS_TEMPLATES[templateKey]
@@ -92,9 +114,8 @@ export function sendSimulatedSms(templateKey, { customer, order, amount, balance
     .replace('{date}', formatDate(order.dueAt))
     .replace('{amount}', formatCurrency(amount ?? 0, { decimals: 0 }))
     .replace('{balance}', formatCurrency(balance ?? 0, { decimals: 0 }))
-  const n = db.nextCounter('sms')
   const entry = {
-    id: formatId('SMS', n, 5),
+    id: logId('SMS'),
     template: templateKey,
     templateLabel: tpl.label,
     to: customer.phone,
@@ -106,7 +127,7 @@ export function sendSimulatedSms(templateKey, { customer, order, amount, balance
     sentBy: user?.id ?? null,
     status: 'simulated',
   }
-  db.update('smsLog', (list) => [entry, ...list].slice(0, 300))
+  writer.set(docRef('smsLog', entry.id), entry)
   return entry
 }
 

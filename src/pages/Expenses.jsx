@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
-import { format, isToday, startOfMonth, subMonths, endOfMonth } from 'date-fns'
+import { useCallback, useState } from 'react'
+import { endOfDay, endOfMonth, format, startOfDay, startOfMonth, subMonths } from 'date-fns'
 import { CalendarDays, Download, FileSpreadsheet, FileText, MoreHorizontal, Paperclip, Pencil, Plus, ReceiptText, Tags, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { expenseService } from '../services'
 import { useAsync } from '../hooks/useAsync'
-import { useTable } from '../hooks/useTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
 import { useDebounce } from '../hooks/useDebounce'
 import { useSettings } from '../context/SettingsContext'
 import PageHeader from '../components/layout/PageHeader'
@@ -96,41 +96,56 @@ function ExpenseFormModal({ open, onClose, expense, onSaved }) {
   )
 }
 
+const WATCH = ['expenses']
+const iso = (d) => d.toISOString()
+
+/** Totals for the cards and charts, from the daily summaries (no expense records are read). */
+async function loadExpenseOverview(range) {
+  const now = new Date()
+  const months = Array.from({ length: 6 }, (_, i) => subMonths(now, 5 - i))
+  const [inRange, today, ...monthly] = await Promise.all([
+    expenseService.getExpenseStats({ from: range.from, to: range.to }),
+    expenseService.getExpenseStats({ from: iso(startOfDay(now)), to: iso(endOfDay(now)) }),
+    ...months.map((m) => expenseService.getExpenseStats({ from: iso(startOfMonth(m)), to: iso(endOfMonth(m)) })),
+  ])
+  const thisMonth = monthly[5].total
+  const lastMonth = monthly[4].total
+  const breakdown = Object.entries(inRange.byCategory ?? {}).filter(([, v]) => v > 0).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+  return {
+    total: inRange.total,
+    breakdown,
+    today: today.total,
+    thisMonth,
+    lastMonth,
+    change: percentChange(thisMonth, lastMonth),
+    monthly: months.map((m, i) => ({ short: format(m, 'MMM'), label: format(m, 'MMMM yyyy'), expenses: monthly[i].total })),
+  }
+}
+
 export default function Expenses() {
   const { business } = useSettings()
-  const { data, loading, error, reload } = useAsync(() => expenseService.getExpenses(), [], { live: true, watch: ['expenses'] })
   const [range, setRange] = useState(() => rangeFromPreset('month'))
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const [modal, setModal] = useState(null)
   const [deleting, setDeleting] = useState(null)
   const [busy, setBusy] = useState(false)
-  const q = useDebounce(query.trim().toLowerCase(), 200)
-  const expenses = useMemo(() => data ?? [], [data])
+  const search = useDebounce(query.trim(), 300)
+  const filters = { from: range.from, to: range.to, category }
 
-  const inRange = useMemo(() => expenses.filter((e) => e.date >= range.from && e.date <= range.to), [expenses, range])
-  const filtered = useMemo(() => inRange.filter((e) => (!category || e.category === category) && (!q || e.title.toLowerCase().includes(q) || e.vendor.toLowerCase().includes(q) || e.id.toLowerCase().includes(q) || e.reference.toLowerCase().includes(q))), [inRange, category, q])
-  const table = useTable(filtered, { pageSize: 15, initialSort: { key: 'date', dir: 'desc' }, resetKey: `${q}|${category}|${range.from}|${range.to}` })
-
-  const stats = useMemo(() => {
-    const now = new Date()
-    const monthStart = startOfMonth(now).toISOString()
-    const lastStart = startOfMonth(subMonths(now, 1)).toISOString()
-    const lastEnd = endOfMonth(subMonths(now, 1)).toISOString()
-    const thisMonth = expenses.filter((e) => e.date >= monthStart).reduce((s, e) => s + e.amount, 0)
-    const lastMonth = expenses.filter((e) => e.date >= lastStart && e.date <= lastEnd).reduce((s, e) => s + e.amount, 0)
-    const today = expenses.filter((e) => isToday(new Date(e.date))).reduce((s, e) => s + e.amount, 0)
-    const byCat = new Map()
-    inRange.forEach((e) => byCat.set(e.category, (byCat.get(e.category) || 0) + e.amount))
-    const breakdown = [...byCat.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
-    const monthly = Array.from({ length: 6 }, (_, i) => {
-      const m = subMonths(now, 5 - i)
-      const s = startOfMonth(m).toISOString()
-      const e = endOfMonth(m).toISOString()
-      return { short: format(m, 'MMM'), label: format(m, 'MMMM yyyy'), expenses: expenses.filter((x) => x.date >= s && x.date <= e).reduce((a, x) => a + x.amount, 0) }
-    })
-    return { thisMonth, lastMonth, today, breakdown, monthly, total: inRange.reduce((s, e) => s + e.amount, 0), change: percentChange(thisMonth, lastMonth) }
-  }, [expenses, inRange])
+  const overview = useAsync(() => loadExpenseOverview(range), [range.from, range.to], { live: true, watch: WATCH })
+  const stats = overview.data
+  const fetchPage = useCallback(
+    ({ pageSize, cursor }) => expenseService.listExpenses({ from: range.from, to: range.to, category, search, pageSize, cursor }),
+    [range.from, range.to, category, search],
+  )
+  const table = usePagedQuery(fetchPage, {
+    key: JSON.stringify([range.from, range.to, category, search]),
+    pageSize: 15,
+    count: () => expenseService.countExpenses({ from: range.from, to: range.to, category }),
+    watch: WATCH,
+  })
+  const pageTotal = table.pageRows.reduce((s, e) => s + e.amount, 0)
 
   const confirmDelete = async () => {
     setBusy(true)
@@ -151,35 +166,37 @@ export default function Expenses() {
     { header: 'Vendor', value: (e) => e.vendor }, { header: 'Reference', value: (e) => e.reference }, { header: 'Recorded by', value: (e) => e.recordedByName },
   ]
   const doExport = async (kind) => {
-    if (!table.sorted.length) return toast.error('No expenses to export.')
     try {
-      if (kind === 'xlsx') await exportExcel([{ name: 'Expenses', rows: table.sorted, columns: EXPORT_COLUMNS }], 'papa-hila-expenses')
-      else if (kind === 'csv') exportCsv(table.sorted, EXPORT_COLUMNS, 'papa-hila-expenses')
+      const rows = search ? (await expenseService.listExpenses({ ...filters, search })).rows : await expenseService.exportExpenses(filters)
+      if (!rows.length) return toast.error('No expenses to export.')
+      if (kind === 'xlsx') await exportExcel([{ name: 'Expenses', rows, columns: EXPORT_COLUMNS }], 'papa-hila-expenses')
+      else if (kind === 'csv') exportCsv(rows, EXPORT_COLUMNS, 'papa-hila-expenses')
       else {
         const { downloadReportPdf } = await import('../utils/pdf')
+        const breakdown = stats?.breakdown ?? []
         await downloadReportPdf({
           title: 'Expense Report', subtitle: describeRange(range), business, fileName: `papa-hila-expenses-${toInputDate(new Date())}.pdf`,
           sections: [
-            { title: 'Summary by category', table: { head: ['Category', 'Amount'], body: stats.breakdown.map((b) => [b.label, formatCurrency(b.value)]), foot: ['Total', formatCurrency(stats.total)], align: ['left', 'right'] } },
-            { title: 'Expense records', table: { head: ['ID', 'Date', 'Title', 'Category', 'Vendor', 'Amount'], body: table.sorted.map((e) => [e.id, formatDate(e.date), e.title, e.category, e.vendor, formatCurrency(e.amount)]), foot: ['', '', '', '', 'Total', formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))], align: ['left', 'left', 'left', 'left', 'left', 'right'] } },
+            { title: 'Summary by category', table: { head: ['Category', 'Amount'], body: breakdown.map((b) => [b.label, formatCurrency(b.value)]), foot: ['Total', formatCurrency(stats?.total ?? 0)], align: ['left', 'right'] } },
+            { title: 'Expense records', table: { head: ['ID', 'Date', 'Title', 'Category', 'Vendor', 'Amount'], body: rows.map((e) => [e.id, formatDate(e.date), e.title, e.category, e.vendor, formatCurrency(e.amount)]), foot: ['', '', '', '', 'Total', formatCurrency(rows.reduce((s, e) => s + e.amount, 0))], align: ['left', 'left', 'left', 'left', 'left', 'right'] } },
           ],
         })
       }
-      toast.success('Expenses exported')
+      toast.success(`Exported ${rows.length} expense${rows.length === 1 ? '' : 's'}`)
     } catch (e) {
       console.error(e)
-      toast.error('Export failed.')
+      toast.error(e.message || 'Export failed.')
     }
   }
 
   const columns = [
-    { key: 'id', header: 'ID', sortable: true, render: (e) => <span className="font-mono text-xs font-semibold text-slate-500">{e.id}</span> },
-    { key: 'title', header: 'Description', sortable: true, render: (e) => <div className="max-w-[260px]"><p className="truncate font-semibold text-ink">{e.title}</p><p className="flex items-center gap-1 truncate text-xs text-muted">{e.vendor || '—'}{e.attachmentName && <Paperclip size={11} aria-label="Has attachment" />}</p></div> },
-    { key: 'category', header: 'Category', sortable: true, hideBelow: 'md', render: (e) => <Badge tone="slate">{e.category}</Badge> },
-    { key: 'date', header: 'Date', sortable: true, render: (e) => <span className="text-slate-600">{formatDate(e.date)}</span> },
-    { key: 'amount', header: 'Amount', sortable: true, align: 'right', render: (e) => <span className="font-bold text-ink">{formatCurrency(e.amount)}</span> },
+    { key: 'id', header: 'ID', render: (e) => <span className="font-mono text-xs font-semibold text-slate-500">{e.id}</span> },
+    { key: 'title', header: 'Description', render: (e) => <div className="max-w-[260px]"><p className="truncate font-semibold text-ink">{e.title}</p><p className="flex items-center gap-1 truncate text-xs text-muted">{e.vendor || '—'}{e.attachmentName && <Paperclip size={11} aria-label="Has attachment" />}</p></div> },
+    { key: 'category', header: 'Category', hideBelow: 'md', render: (e) => <Badge tone="slate">{e.category}</Badge> },
+    { key: 'date', header: 'Date', render: (e) => <span className="text-slate-600">{formatDate(e.date)}</span> },
+    { key: 'amount', header: 'Amount', align: 'right', render: (e) => <span className="font-bold text-ink">{formatCurrency(e.amount)}</span> },
     { key: 'method', header: 'Method', hideBelow: 'lg', render: (e) => <MethodBadge method={e.method} /> },
-    { key: 'recordedByName', header: 'Recorded by', sortable: true, hideBelow: 'xl', render: (e) => <span className="text-slate-600">{e.recordedByName}</span> },
+    { key: 'recordedByName', header: 'Recorded by', hideBelow: 'xl', render: (e) => <span className="text-slate-600">{e.recordedByName}</span> },
     {
       key: 'actions', header: <span className="sr-only">Actions</span>, align: 'right',
       render: (e) => (
@@ -188,6 +205,7 @@ export default function Expenses() {
       ),
     },
   ]
+  const top = stats?.breakdown[0]
 
   return (
     <div className="space-y-6">
@@ -204,30 +222,30 @@ export default function Expenses() {
       />
 
       <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <MiniStat label="This month" value={formatCurrency(stats.thisMonth, { decimals: 0 })} icon={ReceiptText} tone="amber" sub={`Last month ${formatCompactCurrency(stats.lastMonth)}`} />
-        <MiniStat label="Today" value={formatCurrency(stats.today, { decimals: 0 })} icon={CalendarDays} tone="blue" />
-        <MiniStat label="Largest category" value={stats.breakdown[0]?.label ?? '—'} icon={Tags} tone="violet" sub={stats.breakdown[0] ? `${formatCurrency(stats.breakdown[0].value, { decimals: 0 })} · ${describeRange(range).toLowerCase()}` : undefined} />
-        <MiniStat label="Trend vs last month" value={`${stats.change >= 0 ? '+' : ''}${stats.change.toFixed(1)}%`} icon={stats.change > 0 ? TrendingUp : TrendingDown} tone={stats.change > 0 ? 'red' : 'green'} sub="Month to date" />
+        <MiniStat label="This month" value={stats ? formatCurrency(stats.thisMonth, { decimals: 0 }) : '—'} icon={ReceiptText} tone="amber" sub={stats ? `Last month ${formatCompactCurrency(stats.lastMonth)}` : undefined} />
+        <MiniStat label="Today" value={stats ? formatCurrency(stats.today, { decimals: 0 }) : '—'} icon={CalendarDays} tone="blue" />
+        <MiniStat label="Largest category" value={top?.label ?? '—'} icon={Tags} tone="violet" sub={top ? `${formatCurrency(top.value, { decimals: 0 })} · ${describeRange(range).toLowerCase()}` : undefined} />
+        <MiniStat label="Trend vs last month" value={stats ? `${stats.change >= 0 ? '+' : ''}${stats.change.toFixed(1)}%` : '—'} icon={stats?.change > 0 ? TrendingUp : TrendingDown} tone={stats?.change > 0 ? 'red' : 'green'} sub="Month to date" />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardHeader title="Monthly expenses" description="Last 6 months" icon={TrendingUp} />
-          <CardBody>{loading && !data ? <Skeleton className="h-[240px] w-full" /> : <VolumeBarChart data={stats.monthly} dataKey="expenses" name="Expenses" money color="#d97706" height={240} />}</CardBody>
+          <CardBody>{!stats ? <Skeleton className="h-[240px] w-full" /> : <VolumeBarChart data={stats.monthly} dataKey="expenses" name="Expenses" money color="#d97706" height={240} />}</CardBody>
         </Card>
         <Card className="lg:col-span-2">
-          <CardHeader title="By category" description={describeRange(range)} icon={Tags} />
-          <CardBody><BarList rows={stats.breakdown.slice(0, 7)} format={(v) => formatCurrency(v, { decimals: 0 })} color="#d97706" /></CardBody>
+          <CardHeader title="By category" description={stats ? `${describeRange(range)} · ${formatCurrency(stats.total, { decimals: 0 })}` : describeRange(range)} icon={Tags} />
+          <CardBody><BarList rows={(stats?.breakdown ?? []).slice(0, 7)} format={(v) => formatCurrency(v, { decimals: 0 })} color="#d97706" /></CardBody>
         </Card>
       </section>
 
       <Card>
         <div className="flex flex-col gap-2 border-b border-line p-4 sm:flex-row">
-          <SearchInput value={query} onChange={setQuery} placeholder="Search title, vendor, ID or reference…" className="flex-1" />
+          <SearchInput value={query} onChange={setQuery} placeholder="Search title, vendor or expense ID…" className="flex-1" />
           <Select aria-label="Category" value={category} onChange={(e) => setCategory(e.target.value)} placeholder="All categories" options={EXPENSE_CATEGORIES.map((c) => ({ value: c, label: c }))} className="sm:w-60" />
         </div>
-        {error && !data ? <ErrorState error={error} onRetry={reload} /> : (
-          <DataTable columns={columns} table={table} loading={loading && !data} onRowClick={(e) => setModal({ expense: e })} getRowLabel={(e) => `Edit expense ${e.id}`}
+        {table.error && !table.loaded ? <ErrorState error={table.error} onRetry={table.reload} /> : (
+          <DataTable columns={columns} table={table} loading={table.loading && !table.pageRows.length} onRowClick={(e) => setModal({ expense: e })} getRowLabel={(e) => `Edit expense ${e.id}`}
             mobileCard={{
               title: (e) => e.title,
               subtitle: (e) => <>{e.category} · {formatDate(e.date)}</>,
@@ -237,19 +255,19 @@ export default function Expenses() {
             }}
             mobileFooter={
               <div className="flex items-center justify-between text-[13px] font-bold">
-                <span className="text-muted">Total · {table.total} expense{table.total === 1 ? '' : 's'}</span>
-                <span className="tabular-nums text-ink">{formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</span>
+                <span className="text-muted">This page · {table.pageRows.length} expense{table.pageRows.length === 1 ? '' : 's'}</span>
+                <span className="tabular-nums text-ink">{formatCurrency(pageTotal)}</span>
               </div>
             }
-            empty={<EmptyState icon={ReceiptText} title="No expenses in this period" description="Try a wider date range, or record a new expense." action={<Button icon={Plus} onClick={() => setModal({})}>Record expense</Button>} />}
-            footer={table.total > 0 && (
-              <tfoot><tr className="bg-slate-50/80 text-[13px] font-bold"><td colSpan={4} className="px-4 py-3 text-muted">Total ({table.total})</td><td className="px-4 py-3 text-right tabular-nums text-ink">{formatCurrency(filtered.reduce((s, e) => s + e.amount, 0))}</td><td colSpan={3} /></tr></tfoot>
+            empty={<EmptyState icon={ReceiptText} title="No expenses found" description="Try a wider date range or another category, or record a new expense." action={<Button icon={Plus} onClick={() => setModal({})}>Record expense</Button>} />}
+            footer={table.pageRows.length > 0 && (
+              <tfoot><tr className="bg-slate-50/80 text-[13px] font-bold"><td colSpan={4} className="px-4 py-3 text-muted">Total for this page ({table.pageRows.length})</td><td className="px-4 py-3 text-right tabular-nums text-ink">{formatCurrency(pageTotal)}</td><td colSpan={3} /></tr></tfoot>
             )}
           />
         )}
       </Card>
 
-      <ExpenseFormModal open={!!modal} expense={modal?.expense} onClose={() => setModal(null)} onSaved={() => reload({ silent: true })} />
+      <ExpenseFormModal open={!!modal} expense={modal?.expense} onClose={() => setModal(null)} onSaved={() => {}} />
       <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} onConfirm={confirmDelete} loading={busy} title={`Delete expense ${deleting?.id}?`} message={`“${deleting?.title}” (${formatCurrency(deleting?.amount)}) will be permanently removed and your reports will update.`} confirmLabel="Delete expense" />
     </div>
   )

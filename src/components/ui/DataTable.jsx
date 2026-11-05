@@ -7,7 +7,7 @@ import EmptyState from './EmptyState'
  * Generic table used by every list in the app.
  *
  * columns: [{ key, header, render?(row), sortable?, sortType?: 'text'|'number'|'date', align?: 'right'|'center', className?, hideBelow?: 'sm'|'md'|'lg' }]
- * table:   the object returned by useTable() (sorting, pagination, selection)
+ * table:   the object returned by useTable() (client-side) or usePagedQuery() (server-side pages)
  *
  * mobileCard (optional): on phones the table is replaced by a tappable card list.
  *   { leading?, title, subtitle?, meta?, value?, badge? } — each a function(row) => node.
@@ -158,7 +158,7 @@ export default function DataTable({ columns, table, loading, onRowClick, selecta
         </table>
       </div>
       {!rows.length && (empty ?? <EmptyState title="No records found" description="Try adjusting your search or filters." compact />)}
-      <Pagination page={table.page} pageCount={table.pageCount} total={table.total} pageSize={table.pageSize} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />
+      <Pagination page={table.page} pageCount={table.pageCount} total={table.total} pageSize={table.pageSize} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} cursorMode={table.cursorMode} hasMore={table.hasMore} totalKnown={table.totalKnown ?? true} />
     </>
   )
 }

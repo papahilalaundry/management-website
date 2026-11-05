@@ -1,113 +1,109 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { startOfMonth, subDays } from 'date-fns'
-import { ClipboardList, Download, Eye, FileSpreadsheet, FileText, HandCoins, MoreHorizontal, Pencil, Plus, UserCheck, UserPlus, Users } from 'lucide-react'
+import { ClipboardList, Download, Eye, FileSpreadsheet, FileText, HandCoins, MoreHorizontal, Pencil, Plus, Repeat, Sparkles, UserPlus, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { customerService } from '../services'
 import { useAsync } from '../hooks/useAsync'
-import { useTable } from '../hooks/useTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
 import { useDebounce } from '../hooks/useDebounce'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/layout/PageHeader'
 import Button from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import SearchInput from '../components/ui/SearchInput'
-import { Select } from '../components/ui/Field'
+import { Checkbox } from '../components/ui/Field'
+import Tabs from '../components/ui/Tabs'
 import DataTable from '../components/ui/DataTable'
 import Dropdown from '../components/ui/Dropdown'
 import Avatar from '../components/ui/Avatar'
 import EmptyState, { ErrorState } from '../components/ui/EmptyState'
 import { MiniStat } from '../components/shared/StatCard'
+import { ClientTypeBadge } from '../components/shared/StatusBadges'
 import CustomerFormModal from '../components/customers/CustomerFormModal'
 import { formatCurrency, formatNumber } from '../utils/formatCurrency'
 import { formatDate, timeAgo } from '../utils/formatDate'
 import { displayPhone } from '../utils/validators'
 import { exportCsv, exportExcel } from '../utils/exporters'
+import { clientTypeLabel } from '../data/constants'
 
-const FILTERS = [
-  { value: 'outstanding', label: 'With outstanding balance' },
-  { value: 'active', label: 'Active (ordered in last 60 days)' },
-  { value: 'new', label: 'New this month' },
-  { value: 'inactive', label: 'Inactive (no orders in 60 days)' },
-]
+/** "~9 days" or "—" when the client has fewer than two visits. */
+const intervalLabel = (days) => (days == null ? '—' : days < 1 ? 'Same day' : `~${Math.round(days)} day${Math.round(days) === 1 ? '' : 's'}`)
+
 const EXPORT_COLUMNS = [
   { header: 'Customer ID', value: (c) => c.id },
   { header: 'Name', value: (c) => c.name },
   { header: 'Phone', value: (c) => displayPhone(c.phone) },
+  { header: 'Client type', value: (c) => clientTypeLabel(c.clientType) },
+  { header: 'Visits', value: (c) => c.orderCount ?? 0 },
+  { header: 'Brings laundry every (days)', value: (c) => (c.avgIntervalDays == null ? '' : c.avgIntervalDays) },
+  { header: 'First visit', value: (c) => (c.firstOrderAt ? formatDate(c.firstOrderAt) : '') },
+  { header: 'Last visit', value: (c) => (c.lastOrderAt ? formatDate(c.lastOrderAt) : '') },
+  { header: 'Total billed (KES)', value: (c) => c.totalBilled ?? 0 },
+  { header: 'Total paid (KES)', value: (c) => c.totalSpent ?? 0 },
+  { header: 'Outstanding (KES)', value: (c) => c.outstanding ?? 0 },
   { header: 'Email', value: (c) => c.email },
   { header: 'Address', value: (c) => c.address },
-  { header: 'Total orders', value: (c) => c.totalOrders },
-  { header: 'Total spent (KES)', value: (c) => c.totalSpent },
-  { header: 'Outstanding (KES)', value: (c) => c.outstanding },
-  { header: 'Last order', value: (c) => formatDate(c.lastOrderAt) },
   { header: 'Registered', value: (c) => formatDate(c.createdAt) },
 ]
+const WATCH = ['customers', 'orders', 'payments']
 
 export default function Customers() {
   const navigate = useNavigate()
   const { can } = useAuth()
   const finance = can('finance.view')
-  const { data, loading, error, reload } = useAsync(() => customerService.getCustomers(), [], { live: true, watch: ['customers', 'orders', 'payments'] })
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState('')
+  const [type, setType] = useState('')
+  const [withBalance, setWithBalance] = useState(false)
   const [modal, setModal] = useState(null) // { customer? }
-  const q = useDebounce(query.trim().toLowerCase(), 200)
+  const search = useDebounce(query.trim(), 300)
 
-  const customers = useMemo(() => data ?? [], [data])
-  const thresholds = useMemo(() => ({ month: startOfMonth(new Date()).toISOString(), active: subDays(new Date(), 60).toISOString() }), [])
-  const stats = useMemo(() => ({
-    total: customers.length,
-    newThisMonth: customers.filter((c) => c.createdAt >= thresholds.month).length,
-    active: customers.filter((c) => c.lastOrderAt && c.lastOrderAt >= thresholds.active).length,
-    outstanding: customers.filter((c) => c.outstanding > 0).length,
-    outstandingAmount: customers.reduce((s, c) => s + c.outstanding, 0),
-  }), [customers, thresholds])
-
-  const filtered = useMemo(() => {
-    const compact = q.replace(/\s/g, '')
-    return customers.filter((c) => {
-      if (q && !(c.name.toLowerCase().includes(q) || c.phone.includes(compact) || c.id.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q))) return false
-      if (filter === 'outstanding') return c.outstanding > 0
-      if (filter === 'active') return c.lastOrderAt && c.lastOrderAt >= thresholds.active
-      if (filter === 'inactive') return !c.lastOrderAt || c.lastOrderAt < thresholds.active
-      if (filter === 'new') return c.createdAt >= thresholds.month
-      return true
-    })
-  }, [customers, q, filter, thresholds])
-
-  const table = useTable(filtered, { pageSize: 15, initialSort: { key: 'lastOrderAt', dir: 'desc' }, resetKey: `${q}|${filter}` })
+  const { data: stats } = useAsync(() => customerService.getCustomerStats(), [], { live: true, watch: WATCH })
+  const filters = { type, withBalance }
+  const fetchPage = useCallback(
+    ({ pageSize, cursor }) => customerService.listCustomers({ type, withBalance, search, pageSize, cursor }),
+    [type, withBalance, search],
+  )
+  const table = usePagedQuery(fetchPage, {
+    key: JSON.stringify([type, withBalance, search]),
+    pageSize: 15,
+    count: () => customerService.countCustomers({ type, withBalance }),
+    watch: WATCH,
+  })
 
   const doExport = async (kind) => {
     try {
-      if (kind === 'xlsx') await exportExcel([{ name: 'Customers', rows: table.sorted, columns: EXPORT_COLUMNS }], 'papa-hila-customers')
-      else exportCsv(table.sorted, EXPORT_COLUMNS, 'papa-hila-customers')
-      toast.success(`Exported ${table.sorted.length} customers`)
-    } catch {
-      toast.error('Export failed. Please try again.')
+      const rows = search ? table.pageRows : await customerService.exportCustomers(filters)
+      if (!rows.length) return toast.error('There are no customers to export.')
+      if (kind === 'xlsx') await exportExcel([{ name: 'Customers', rows, columns: EXPORT_COLUMNS }], 'papa-hila-customers')
+      else exportCsv(rows, EXPORT_COLUMNS, 'papa-hila-customers')
+      toast.success(`Exported ${rows.length} customers`)
+    } catch (e) {
+      toast.error(e.message || 'Export failed. Please try again.')
     }
   }
 
   const columns = [
-    { key: 'id', header: 'ID', sortable: true, render: (c) => <span className="font-mono text-xs font-semibold text-slate-500">{c.id}</span> },
     {
-      key: 'name', header: 'Customer', sortable: true,
+      key: 'name', header: 'Client',
       render: (c) => (
         <div className="flex items-center gap-3">
           <Avatar name={c.name} size="sm" />
           <div className="min-w-0">
-            <p className="truncate font-semibold text-ink">{c.name}</p>
-            <p className="truncate text-xs text-muted sm:hidden">{displayPhone(c.phone)}</p>
+            <p className="flex items-center gap-2 truncate font-semibold text-ink">{c.name} <ClientTypeBadge type={c.clientType} size="sm" /></p>
+            <p className="truncate font-mono text-[11px] text-muted">{c.id}</p>
           </div>
         </div>
       ),
     },
     { key: 'phone', header: 'Phone', hideBelow: 'sm', render: (c) => <span className="tabular-nums text-slate-700">{displayPhone(c.phone)}</span> },
-    { key: 'email', header: 'Email', hideBelow: 'xl', render: (c) => c.email ? <span className="text-slate-600">{c.email}</span> : <span className="text-slate-300">—</span> },
-    { key: 'totalOrders', header: 'Orders', sortable: true, align: 'center', render: (c) => <span className="font-semibold">{c.totalOrders}</span> },
-    finance && { key: 'totalSpent', header: 'Total spent', sortable: true, align: 'right', hideBelow: 'md', render: (c) => formatCurrency(c.totalSpent, { decimals: 0 }) },
-    { key: 'outstanding', header: 'Outstanding', sortable: true, align: 'right', render: (c) => <span className={c.outstanding > 0 ? 'font-semibold text-red-600' : 'text-slate-400'}>{formatCurrency(c.outstanding, { decimals: 0 })}</span> },
-    { key: 'lastOrderAt', header: 'Last order', sortable: true, hideBelow: 'lg', render: (c) => (c.lastOrderAt ? <span className="text-slate-600">{timeAgo(c.lastOrderAt)}</span> : <span className="text-slate-300">Never</span>) },
-    { key: 'createdAt', header: 'Registered', sortable: true, hideBelow: 'lg', render: (c) => <span className="text-slate-600">{formatDate(c.createdAt)}</span> },
+    { key: 'orderCount', header: 'Visits', align: 'center', render: (c) => <span className="font-semibold">{c.orderCount ?? 0}</span> },
+    { key: 'avgIntervalDays', header: 'Brings laundry every', hideBelow: 'md', render: (c) => <span className={c.avgIntervalDays == null ? 'text-slate-300' : 'text-slate-700'}>{intervalLabel(c.avgIntervalDays)}</span> },
+    {
+      key: 'lastOrderAt', header: 'Last visit', hideBelow: 'lg',
+      render: (c) => (c.lastOrderAt ? <div><p className="text-[13px] text-slate-700">{formatDate(c.lastOrderAt)}</p><p className="text-[11px] text-muted">{timeAgo(c.lastOrderAt)}</p></div> : <span className="text-slate-300">No visits yet</span>),
+    },
+    finance && { key: 'totalSpent', header: 'Total paid', align: 'right', hideBelow: 'md', render: (c) => formatCurrency(c.totalSpent ?? 0, { decimals: 0 }) },
+    { key: 'outstanding', header: 'Balance', align: 'right', render: (c) => <span className={c.outstanding > 0 ? 'font-semibold text-red-600' : 'text-slate-400'}>{formatCurrency(c.outstanding ?? 0, { decimals: 0 })}</span> },
     {
       key: 'actions', header: <span className="sr-only">Actions</span>, align: 'right',
       render: (c) => (
@@ -123,11 +119,18 @@ export default function Customers() {
     },
   ].filter(Boolean)
 
+  const tabs = [
+    { value: '', label: 'All clients', count: stats?.total },
+    { value: 'new', label: 'New clients', count: stats?.new },
+    { value: 'regular', label: 'Regular clients', count: stats?.regular },
+  ]
+  const filtering = !!(search || type || withBalance)
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Customers"
-        description="Everyone who brings their laundry to Papa Hila."
+        description="Everyone who brings their laundry to Papa Hila — new and regular clients."
         actions={
           <>
             <Dropdown
@@ -143,40 +146,52 @@ export default function Customers() {
       />
 
       <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Customer statistics">
-        <MiniStat label="Total customers" value={formatNumber(stats.total)} icon={Users} tone="blue" />
-        <MiniStat label="New this month" value={formatNumber(stats.newThisMonth)} icon={UserPlus} tone="violet" />
-        <MiniStat label="Active (60 days)" value={formatNumber(stats.active)} icon={UserCheck} tone="green" />
-        <MiniStat label="With outstanding balances" value={formatNumber(stats.outstanding)} icon={HandCoins} tone="red" sub={finance ? `${formatCurrency(stats.outstandingAmount, { decimals: 0 })} owed` : undefined} />
+        <MiniStat label="Total clients" value={stats ? formatNumber(stats.total) : '—'} icon={Users} tone="blue" />
+        <MiniStat label="New clients" value={stats ? formatNumber(stats.new) : '—'} icon={Sparkles} tone="cyan" sub="One visit or none yet" />
+        <MiniStat label="Regular clients" value={stats ? formatNumber(stats.regular) : '—'} icon={Repeat} tone="violet" sub="Two or more visits" />
+        <MiniStat label="With outstanding balances" value={stats ? formatNumber(stats.withBalance) : '—'} icon={HandCoins} tone="red" sub={finance && stats ? `${formatCurrency(stats.outstanding, { decimals: 0 })} owed` : undefined} />
       </section>
 
       <Card>
-        <div className="flex flex-col gap-2 border-b border-line p-4 sm:flex-row">
-          <SearchInput value={query} onChange={setQuery} placeholder="Search by name, phone, email or ID…" className="flex-1" />
-          <Select aria-label="Filter customers" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="All customers" options={FILTERS} className="sm:w-64" />
+        <div className="space-y-3 border-b border-line p-4">
+          <Tabs variant="pills" tabs={tabs} value={type} onChange={setType} ariaLabel="Filter by client type" />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <SearchInput value={query} onChange={setQuery} placeholder="Search by name, phone or customer ID…" className="flex-1" />
+            <div className="flex h-10 items-center rounded-lg border border-line bg-white px-3">
+              <Checkbox label="With balance only" checked={withBalance} onChange={(e) => setWithBalance(e.target.checked)} />
+            </div>
+          </div>
+          {withBalance && !search && <p className="text-xs text-muted">Sorted by largest balance first.</p>}
         </div>
-        {error && !data ? (
-          <ErrorState error={error} onRetry={reload} />
+        {table.error && !table.loaded ? (
+          <ErrorState error={table.error} onRetry={table.reload} />
         ) : (
           <DataTable
             columns={columns}
             table={table}
-            loading={loading && !data}
+            loading={table.loading && !table.pageRows.length}
             onRowClick={(c) => navigate(`/customers/${c.id}`)}
             getRowLabel={(c) => `Open profile for ${c.name}`}
             mobileCard={{
               leading: (c) => <Avatar name={c.name} size="md" />,
               title: (c) => c.name,
               subtitle: (c) => <span className="tabular-nums">{displayPhone(c.phone)}</span>,
-              meta: (c) => <span>{c.totalOrders} order{c.totalOrders === 1 ? '' : 's'} · {c.lastOrderAt ? `last ${timeAgo(c.lastOrderAt)}` : 'no orders yet'}</span>,
+              meta: (c) => (
+                <span>
+                  {c.orderCount ?? 0} visit{c.orderCount === 1 ? '' : 's'}
+                  {c.avgIntervalDays != null ? ` · every ${intervalLabel(c.avgIntervalDays)}` : ''}
+                  {c.lastOrderAt ? ` · last ${timeAgo(c.lastOrderAt)}` : ''}
+                </span>
+              ),
               value: (c) => (c.outstanding > 0 ? <span className="text-red-600">{formatCurrency(c.outstanding, { decimals: 0 })}</span> : null),
-              badge: (c) => (c.outstanding > 0 ? <span className="text-[11px] font-medium text-red-600">owes</span> : null),
+              badge: (c) => <ClientTypeBadge type={c.clientType} size="sm" />,
             }}
             empty={
               <EmptyState
                 icon={Users}
-                title={customers.length ? 'No customers match your search' : 'No customers yet'}
-                description={customers.length ? 'Try a different name or phone number.' : 'Add your first customer to get started.'}
-                action={can('customers.create') && <Button icon={Plus} onClick={() => setModal({})}>Add customer</Button>}
+                title={filtering ? 'No customers match your search' : 'No customers yet'}
+                description={filtering ? 'Try a different name, phone number or filter.' : 'Add your first customer to get started.'}
+                action={!filtering && can('customers.create') && <Button icon={Plus} onClick={() => setModal({})}>Add customer</Button>}
               />
             }
           />

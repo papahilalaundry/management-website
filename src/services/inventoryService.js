@@ -1,17 +1,19 @@
-import { db } from './storage'
+import { orderBy, query, where } from 'firebase/firestore'
+import { allocate, col, db, docRef, fetchPage, transact } from './storage'
 import { request, notFound, validationError, ApiError } from './mockApi'
-import { buildContext, logActivity, nowIso, pushNotification, staffName, stockStatus } from './helpers'
+import { logActivity, logId, nowIso, pushNotification, staffName, stockStatus, withWriter } from './helpers'
 import { formatId } from '../utils/generateIds'
 import { roundMoney } from '../utils/formatCurrency'
 import { validateInventoryItem } from '../utils/validators'
 
 const withStatus = (item) => ({ ...item, status: stockStatus(item), stockValue: roundMoney(item.stock * item.unitCost) })
 
-function alertIfLow(before, after) {
+function alertIfLow(writer, before, after) {
   const was = stockStatus(before)
   const now = stockStatus(after)
   if (now === 'in' || now === was) return
   pushNotification(
+    writer,
     'low_stock',
     now === 'out' ? 'Out of stock' : 'Low stock alert',
     `${after.name}: ${after.stock} ${after.unit} left (minimum ${after.minStock}).`,
@@ -21,58 +23,71 @@ function alertIfLow(before, after) {
 
 export const inventoryService = {
   getInventory() {
-    return request(() => db.get('inventory').map(withStatus).sort((a, b) => a.name.localeCompare(b.name)), { permission: 'inventory.view' })
+    return request(async () => db.get('inventory').map(withStatus), { permission: 'inventory.view' })
   },
 
-  getStockMovements(itemId) {
-    return request(() => {
-      const ctx = buildContext()
+  /**
+   * One page of stock movements, newest first (optionally for one item).
+   * @returns {{ rows, cursor, hasMore }}
+   */
+  getStockMovements(itemId, { pageSize = 20, cursor = null } = {}) {
+    return request(async () => {
       const items = new Map(db.get('inventory').map((i) => [i.id, i]))
-      return db
-        .get('stockMovements')
-        .filter((m) => !itemId || m.itemId === itemId)
-        .map((m) => ({ ...m, itemName: items.get(m.itemId)?.name ?? 'Deleted item', unit: items.get(m.itemId)?.unit ?? '', byName: staffName(ctx, m.by) }))
-        .sort((a, b) => b.at.localeCompare(a.at))
-    }, { permission: 'inventory.view', latency: [120, 250] })
+      const q = query(col('stockMovements'), ...(itemId ? [where('itemId', '==', itemId)] : []), orderBy('at', 'desc'))
+      const page = await fetchPage(q, { pageSize, cursor })
+      return {
+        ...page,
+        rows: page.rows.map((m) => ({ ...m, itemName: items.get(m.itemId)?.name ?? 'Deleted item', unit: items.get(m.itemId)?.unit ?? '', byName: staffName(m.by) })),
+      }
+    }, { permission: 'inventory.view' })
   },
 
   createItem(data) {
-    return request((user) => {
+    return request(async (user) => {
       const errors = validateInventoryItem(data)
       if (Object.keys(errors).length) throw validationError(errors)
-      const item = {
-        id: formatId('INV', db.nextCounter('inventory'), 3),
-        name: data.name.trim(),
-        category: data.category,
-        unit: data.unit,
-        stock: Number(data.stock),
-        minStock: Number(data.minStock),
-        unitCost: Number(data.unitCost),
-        supplier: data.supplier?.trim() ?? '',
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      }
-      db.update('inventory', (list) => [...list, item])
-      if (item.stock > 0) {
-        db.update('stockMovements', (list) => [...list, { id: `${item.id}-M1`, itemId: item.id, type: 'received', quantity: item.stock, balanceAfter: item.stock, reason: 'Opening stock', at: nowIso(), by: user.id }])
-      }
-      logActivity('inventory', `added inventory item ${item.name}`, user, { itemId: item.id })
-      alertIfLow({ ...item, stock: Infinity }, item)
+      const item = await transact(async (tx) => {
+        const { ids, commit } = await allocate(tx, { inventory: 1 })
+        const it = {
+          id: formatId('INV', ids.inventory, 3),
+          name: data.name.trim(),
+          category: data.category,
+          unit: data.unit,
+          stock: Number(data.stock),
+          minStock: Number(data.minStock),
+          unitCost: Number(data.unitCost),
+          supplier: data.supplier?.trim() ?? '',
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        }
+        commit()
+        tx.set(docRef('inventory', it.id), it)
+        if (it.stock > 0) {
+          const m = { id: logId('MOV'), itemId: it.id, type: 'received', quantity: it.stock, balanceAfter: it.stock, reason: 'Opening stock', at: nowIso(), by: user.id }
+          tx.set(docRef('stockMovements', m.id), m)
+        }
+        logActivity(tx, 'inventory', `added inventory item ${it.name}`, user, { itemId: it.id })
+        alertIfLow(tx, { ...it, stock: Infinity }, it)
+        return it
+      })
       return withStatus(item)
     }, { permission: 'inventory.manage' })
   },
 
   /** Edits item details. Stock levels change only through recordMovement(). */
   updateItem(id, data) {
-    return request((user) => {
+    return request(async (user) => {
       const existing = db.get('inventory').find((i) => i.id === id)
       if (!existing) throw notFound('Inventory item')
       const errors = validateInventoryItem({ ...data, stock: existing.stock })
       if (Object.keys(errors).length) throw validationError(errors)
-      const updated = { ...existing, name: data.name.trim(), category: data.category, unit: data.unit, minStock: Number(data.minStock), unitCost: Number(data.unitCost), supplier: data.supplier?.trim() ?? '', updatedAt: nowIso() }
-      db.update('inventory', (list) => list.map((i) => (i.id === id ? updated : i)))
-      logActivity('inventory', `updated inventory item ${updated.name}`, user, { itemId: id })
-      alertIfLow(existing, updated)
+      const patch = { name: data.name.trim(), category: data.category, unit: data.unit, minStock: Number(data.minStock), unitCost: Number(data.unitCost), supplier: data.supplier?.trim() ?? '', updatedAt: nowIso() }
+      const updated = { ...existing, ...patch }
+      await withWriter(null, (b) => {
+        b.update(docRef('inventory', id), patch)
+        logActivity(b, 'inventory', `updated inventory item ${updated.name}`, user, { itemId: id })
+        alertIfLow(b, existing, updated)
+      })
       return withStatus(updated)
     }, { permission: 'inventory.manage' })
   },
@@ -82,9 +97,7 @@ export const inventoryService = {
    * For adjustments, quantity is the signed change (e.g. -2 after a count).
    */
   recordMovement(id, data) {
-    return request((user) => {
-      const item = db.get('inventory').find((i) => i.id === id)
-      if (!item) throw notFound('Inventory item')
+    return request(async (user) => {
       const errors = {}
       const qty = Number(data.quantity)
       if (!['received', 'used', 'adjustment'].includes(data.type)) errors.type = 'Select a movement type'
@@ -92,28 +105,34 @@ export const inventoryService = {
       else if (data.type !== 'adjustment' && qty < 0) errors.quantity = 'Quantity must be positive'
       if (!data.reason?.trim()) errors.reason = 'A reason is required for every stock movement'
       if (Object.keys(errors).length) throw validationError(errors)
-      const delta = data.type === 'used' ? -Math.abs(qty) : data.type === 'received' ? Math.abs(qty) : qty
-      const newStock = roundMoney(item.stock + delta)
-      if (newStock < 0) throw validationError({ quantity: `Only ${item.stock} ${item.unit} in stock` }, 'Stock cannot go below zero.')
-
-      const updated = { ...item, stock: newStock, updatedAt: nowIso() }
-      db.update('inventory', (list) => list.map((i) => (i.id === id ? updated : i)))
-      const movement = { id: `${id}-M${Date.now().toString(36)}`, itemId: id, type: data.type, quantity: delta, balanceAfter: newStock, reason: data.reason.trim(), at: nowIso(), by: user.id }
-      db.update('stockMovements', (list) => [...list, movement])
-      const verb = data.type === 'received' ? 'received' : data.type === 'used' ? 'used' : 'adjusted'
-      logActivity('inventory', `${verb} ${Math.abs(delta)} ${item.unit} of ${item.name}`, user, { itemId: id })
-      alertIfLow(item, updated)
-      return { item: withStatus(updated), movement }
+      return transact(async (tx) => {
+        const snap = await tx.get(docRef('inventory', id))
+        if (!snap.exists()) throw notFound('Inventory item')
+        const item = snap.data()
+        const delta = data.type === 'used' ? -Math.abs(qty) : data.type === 'received' ? Math.abs(qty) : qty
+        const newStock = roundMoney(item.stock + delta)
+        if (newStock < 0) throw validationError({ quantity: `Only ${item.stock} ${item.unit} in stock` }, 'Stock cannot go below zero.')
+        const updated = { ...item, stock: newStock, updatedAt: nowIso() }
+        tx.update(docRef('inventory', id), { stock: newStock, updatedAt: updated.updatedAt })
+        const movement = { id: logId('MOV'), itemId: id, type: data.type, quantity: delta, balanceAfter: newStock, reason: data.reason.trim(), at: nowIso(), by: user.id }
+        tx.set(docRef('stockMovements', movement.id), movement)
+        const verb = data.type === 'received' ? 'received' : data.type === 'used' ? 'used' : 'adjusted'
+        logActivity(tx, 'inventory', `${verb} ${Math.abs(delta)} ${item.unit} of ${item.name}`, user, { itemId: id })
+        alertIfLow(tx, item, updated)
+        return { item: withStatus(updated), movement }
+      })
     }, { permission: 'inventory.manage' })
   },
 
   deleteItem(id) {
-    return request((user) => {
+    return request(async (user) => {
       const existing = db.get('inventory').find((i) => i.id === id)
       if (!existing) throw notFound('Inventory item')
       if (existing.stock > 0) throw new ApiError('Only items with zero stock can be deleted. Record usage or an adjustment first.', { status: 409 })
-      db.update('inventory', (list) => list.filter((i) => i.id !== id))
-      logActivity('inventory', `deleted inventory item ${existing.name}`, user)
+      await withWriter(null, (b) => {
+        b.delete(docRef('inventory', id))
+        logActivity(b, 'inventory', `deleted inventory item ${existing.name}`, user)
+      })
       return { id }
     }, { permission: 'inventory.manage' })
   },

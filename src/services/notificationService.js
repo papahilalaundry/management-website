@@ -1,69 +1,88 @@
-import { db } from './storage'
+import { orderBy, query, where } from 'firebase/firestore'
+import { col, countOf, docRef, fetchAll, fetchOne, fetchPage } from './storage'
 import { request, notFound, ApiError } from './mockApi'
-import { buildContext, nowIso, sendSimulatedSms, staffName } from './helpers'
+import { nowIso, sendSimulatedSms, staffName, withWriter } from './helpers'
 import { can } from '../utils/permissions'
-import { SMS_TEMPLATES } from '../data/constants'
+import { NOTIFICATION_CATEGORIES, SMS_TEMPLATES } from '../data/constants'
 
 /** Staff don't see finance-related notifications. */
-const visibleTo = (user) => (n) => can(user, 'finance.view') || !['payment', 'outstanding', 'system'].includes(n.category)
+const FINANCE_CATEGORIES = ['payment', 'outstanding', 'system']
+const visibleCategories = (user) => (can(user, 'finance.view') ? null : NOTIFICATION_CATEGORIES.map((c) => c.value).filter((c) => !FINANCE_CATEGORIES.includes(c)))
+
+function visibleQuery(user, extra = []) {
+  const cats = visibleCategories(user)
+  return query(col('notifications'), ...(cats ? [where('category', 'in', cats)] : []), ...extra, orderBy('createdAt', 'desc'))
+}
 
 export const notificationService = {
-  getNotifications() {
-    return request((user) => db.get('notifications').filter(visibleTo(user)), { permission: 'notifications.view', latency: [100, 220] })
+  /**
+   * One page of notifications, newest first.
+   * @param {object} params { unreadOnly, pageSize, cursor }
+   */
+  listNotifications({ unreadOnly = false, pageSize = 20, cursor = null } = {}) {
+    return request((user) => fetchPage(visibleQuery(user, unreadOnly ? [where('read', '==', false)] : []), { pageSize, cursor }), { permission: 'notifications.view' })
+  },
+
+  /** Latest few, for the bell menu. */
+  getRecent(max = 8) {
+    return request(async (user) => (await fetchPage(visibleQuery(user), { pageSize: max })).rows, { permission: 'notifications.view' })
+  },
+
+  getUnreadCount() {
+    return request((user) => countOf(visibleQuery(user, [where('read', '==', false)])), { permission: 'notifications.view' })
   },
 
   markRead(id, read = true) {
-    return request(() => {
-      if (!db.get('notifications').some((n) => n.id === id)) throw notFound('Notification')
-      db.update('notifications', (list) => list.map((n) => (n.id === id ? { ...n, read } : n)))
+    return request(async () => {
+      await withWriter(null, (b) => b.update(docRef('notifications', id), { read }))
       return { id, read }
-    }, { latency: [60, 140] })
+    })
   },
 
+  /** Marks up to 500 unread notifications as read. */
   markAllRead() {
-    return request((user) => {
-      const visible = visibleTo(user)
-      db.update('notifications', (list) => list.map((n) => (visible(n) ? { ...n, read: true } : n)))
-      return { ok: true }
-    }, { latency: [100, 200] })
+    return request(async (user) => {
+      const unread = await fetchAll(visibleQuery(user, [where('read', '==', false)]), 500)
+      if (unread.length) await withWriter(null, (b) => unread.forEach((n) => b.update(docRef('notifications', n.id), { read: true })))
+      return { ok: true, count: unread.length }
+    })
   },
 
   deleteNotification(id) {
-    return request(() => {
-      db.update('notifications', (list) => list.filter((n) => n.id !== id))
+    return request(async () => {
+      await withWriter(null, (b) => b.delete(docRef('notifications', id)))
       return { id }
-    }, { latency: [80, 160] })
+    })
   },
 
+  /** Deletes up to 500 read notifications. */
   clearRead() {
-    return request((user) => {
-      const visible = visibleTo(user)
-      db.update('notifications', (list) => list.filter((n) => !(visible(n) && n.read)))
-      return { ok: true }
+    return request(async (user) => {
+      const read = await fetchAll(visibleQuery(user, [where('read', '==', true)]), 500)
+      if (read.length) await withWriter(null, (b) => read.forEach((n) => b.delete(docRef('notifications', n.id))))
+      return { ok: true, count: read.length }
     })
   },
 
   /* ---- Simulated SMS (DEMO — nothing is actually sent) ---- */
-  getSmsLog() {
-    return request(() => {
-      const ctx = buildContext()
-      return db.get('smsLog').map((s) => ({ ...s, sentByName: staffName(ctx, s.sentBy) }))
-    }, { latency: [100, 200] })
+  /** One page of the SMS log, newest first. */
+  getSmsLog({ pageSize = 20, cursor = null } = {}) {
+    return request(async () => {
+      const page = await fetchPage(query(col('smsLog'), orderBy('sentAt', 'desc')), { pageSize, cursor })
+      return { ...page, rows: page.rows.map((s) => ({ ...s, sentByName: staffName(s.sentBy) })) }
+    })
   },
 
   /** Manually (re)send a templated SMS for an order. */
   sendOrderSms(orderId, templateKey) {
-    return request((user) => {
+    return request(async (user) => {
       if (!SMS_TEMPLATES[templateKey]) throw new ApiError('Unknown SMS template.')
-      const order = db.get('orders').find((o) => o.id === orderId)
+      const order = await fetchOne('orders', orderId)
       if (!order) throw notFound(`Order ${orderId}`)
-      const ctx = buildContext()
-      const customer = ctx.customers.get(order.customerId)
-      const paid = ctx.paidByOrder.get(order.id) || 0
-      const lastPayment = [...db.get('payments')].reverse().find((p) => p.orderId === orderId)
-      const sms = sendSimulatedSms(templateKey, { customer, order, amount: lastPayment?.amount ?? 0, balance: Math.max(0, order.total - paid) }, user)
+      const [lastPayment] = await fetchAll(query(col('payments'), where('orderId', '==', orderId), orderBy('paidAt', 'desc')), 1)
+      const sms = await withWriter(null, (b) => sendSimulatedSms(b, templateKey, { customer: { id: order.customerId, name: order.customerName, phone: order.customerPhone }, order, amount: lastPayment?.amount ?? 0, balance: order.balance }, user))
       if (!sms) throw new ApiError('SMS simulation is turned off in Settings → Notifications.')
       return { ...sms, sentAt: sms.sentAt ?? nowIso() }
-    }, { latency: [500, 900] })
+    })
   },
 }

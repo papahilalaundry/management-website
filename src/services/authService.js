@@ -1,60 +1,74 @@
 /**
- * ⚠️ SIMULATED AUTHENTICATION — FOR DEMO/DEVELOPMENT ONLY.
- *
- * Credentials are checked against plain-text passwords in localStorage and the
- * "session" is just a user id stored in the browser. This provides NO real
- * security. Before production, replace this module with a backend that:
- *   - hashes passwords (bcrypt/argon2) and never sends them to the client,
- *   - issues httpOnly, secure session cookies or short-lived JWTs,
- *   - enforces role permissions on every API endpoint,
- *   - rate-limits login attempts.
+ * Sign-in with Firebase Authentication. Staff type only their username; the
+ * login email is username@papahilalaundry.com behind the scenes.
+ * Each Auth user is linked to a staff record through users/{uid}.
  */
-import { db, readSession, writeSession } from './storage'
-import { request, ApiError, validationError, currentUser } from './mockApi'
-import { logActivity, nowIso } from './helpers'
-import { isValidEmail } from '../utils/validators'
+import { browserLocalPersistence, browserSessionPersistence, setPersistence, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { auth } from '../firebase'
+import { closeSession, docRef, openSession } from './storage'
+import { currentUser } from './mockApi'
+import { ApiError, toApiError, validationError } from './errors'
+import { logActivity, nowIso, withWriter } from './helpers'
+import { normalizeUsername, usernameToEmail } from '../data/constants'
 
-const toPublic = ({ password, ...rest }) => rest // eslint-disable-line no-unused-vars
-
-export const DEMO_ACCOUNTS = [
-  { role: 'Admin', email: 'admin@papahila.com', password: 'Admin123!' },
-  { role: 'Manager', email: 'manager@papahila.com', password: 'Manager123!' },
-  { role: 'Staff', email: 'staff@papahila.com', password: 'Staff123!' },
-]
+export const authErrorMessage = (err) => {
+  switch (err?.code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+    case 'auth/invalid-email':
+      return 'The username or password you entered is incorrect.'
+    case 'auth/user-disabled':
+      return 'This account has been disabled. Please contact your administrator.'
+    case 'auth/too-many-requests':
+      return 'Too many failed attempts. Wait a few minutes and try again.'
+    case 'auth/network-request-failed':
+      return 'Cannot reach the server. Check your internet connection.'
+    default:
+      return null
+  }
+}
 
 export const authService = {
-  login({ email, password, remember }) {
-    return request(() => {
-      const errors = {}
-      if (!email?.trim()) errors.email = 'Email is required'
-      else if (!isValidEmail(email)) errors.email = 'Enter a valid email address'
-      if (!password) errors.password = 'Password is required'
-      if (Object.keys(errors).length) throw validationError(errors)
-
-      const user = db.get('staff').find((s) => s.email.toLowerCase() === email.trim().toLowerCase())
-      if (!user || user.password !== password) throw new ApiError('The email or password you entered is incorrect.', { status: 401 })
-      if (user.status !== 'active') throw new ApiError('This account has been deactivated. Please contact your administrator.', { status: 403 })
-
-      writeSession({ userId: user.id, issuedAt: nowIso() }, remember)
-      db.update('staff', (list) => list.map((s) => (s.id === user.id ? { ...s, lastActiveAt: nowIso() } : s)))
-      logActivity('auth', 'signed in', user)
-      return toPublic(user)
-    }, { auth: false, latency: [600, 1000] })
-  },
-
-  logout() {
-    writeSession(null)
-    return Promise.resolve()
-  },
-
-  /** Synchronous session restore on page load. */
-  restoreSession() {
-    if (!readSession()) return null
-    const user = currentUser()
-    if (!user) {
-      writeSession(null)
-      return null
+  /** @param {{ username, password, remember }} credentials */
+  async login({ username, password, remember = true }) {
+    const errors = {}
+    if (!normalizeUsername(username)) errors.username = 'Username is required'
+    if (!password) errors.password = 'Password is required'
+    if (Object.keys(errors).length) throw validationError(errors)
+    try {
+      await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence)
+      const cred = await signInWithEmailAndPassword(auth, usernameToEmail(username), password)
+      try {
+        await openSession(cred.user)
+      } catch (err) {
+        await signOut(auth)
+        throw err
+      }
+      const user = currentUser()
+      if (!user) {
+        await authService.logout()
+        throw new ApiError('This account has been deactivated. Please contact your administrator.', { status: 403 })
+      }
+      await withWriter(null, (b) => {
+        b.update(docRef('staff', user.id), { lastActiveAt: nowIso() })
+        logActivity(b, 'auth', 'signed in', user)
+      }).catch((e) => console.warn('[auth] could not record sign-in', e))
+      return { ...user }
+    } catch (err) {
+      const msg = authErrorMessage(err)
+      throw msg ? new ApiError(msg, { status: 401 }) : toApiError(err)
     }
-    return toPublic(user)
+  },
+
+  async logout() {
+    closeSession()
+    await signOut(auth)
+  },
+
+  /** The signed-in staff member (restored before the app renders), or null. */
+  restoreSession() {
+    const user = currentUser()
+    return user ? { ...user } : null
   },
 }

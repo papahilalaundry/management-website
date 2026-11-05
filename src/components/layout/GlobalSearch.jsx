@@ -1,22 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ClipboardList, LoaderCircle, Search, User } from 'lucide-react'
-import { CHANGE_EVENT, customerService, orderService } from '../../services'
+import { customerService, orderService } from '../../services'
 import { useDebounce } from '../../hooks/useDebounce'
 import { OrderStatusBadge } from '../shared/StatusBadges'
 import { displayPhone } from '../../utils/validators'
 
-/** Searches orders (ID, customer, phone, garment) and customers. Shortcut: Ctrl/⌘+K or "/". */
+/**
+ * Searches the database for orders (order ID, phone, start of client name) and
+ * clients (ID, phone, any word of their name). Shortcut: Ctrl/⌘+K or "/".
+ */
 export default function GlobalSearch({ className = '', autoFocus = false, inline = false, onNavigate }) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
-  const [index, setIndex] = useState(null) // { orders, customers }
-  const [loading, setLoading] = useState(false)
+  const [found, setFound] = useState(null) // { q, results }
+  const [error, setError] = useState(null)
   const [active, setActive] = useState(0)
   const inputRef = useRef(null)
   const boxRef = useRef(null)
-  const q = useDebounce(query.trim().toLowerCase(), 150)
+  const q = useDebounce(query.trim().toLowerCase(), 300)
 
   useEffect(() => {
     const onKey = (e) => {
@@ -27,43 +30,34 @@ export default function GlobalSearch({ className = '', autoFocus = false, inline
       }
     }
     const onClick = (e) => !boxRef.current?.contains(e.target) && setOpen(false)
-    // Drop the cached index whenever orders/customers change so results stay fresh
-    const onData = (e) => e.detail?.collections?.some((c) => c === 'orders' || c === 'customers') && setIndex(null)
-    window.addEventListener(CHANGE_EVENT, onData)
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onClick)
     return () => {
-      window.removeEventListener(CHANGE_EVENT, onData)
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onClick)
     }
   }, [])
 
-  const ensureIndex = async () => {
-    setOpen(true)
-    if (index || loading) return
-    setLoading(true)
-    try {
-      const [orders, customers] = await Promise.all([orderService.getOrders(), customerService.getCustomers()])
-      setIndex({ orders, customers })
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Query the server for each (debounced) search; ignore answers to older searches.
+  useEffect(() => {
+    if (q.length < 2) return undefined
+    let stale = false
+    Promise.all([orderService.listOrders({ search: q, pageSize: 6 }), customerService.searchCustomers(q)])
+      .then(([orders, customers]) => {
+        if (stale) return
+        const results = [
+          ...orders.rows.slice(0, 5).map((o) => ({ type: 'order', id: o.id, to: `/orders/${o.id}`, title: o.id, subtitle: `${o.customer.name} · ${o.weightKg ?? '–'} kg · ${o.garmentCount ?? 0} garments`, status: o.status })),
+          ...customers.slice(0, 4).map((c) => ({ type: 'customer', id: c.id, to: `/customers/${c.id}`, title: c.name, subtitle: `${c.id} · ${displayPhone(c.phone)}` })),
+        ]
+        setFound({ q, results })
+        setError(null)
+      })
+      .catch((e) => !stale && setError(e))
+    return () => { stale = true }
+  }, [q])
 
-  const results = useMemo(() => {
-    if (!q || !index) return []
-    const compact = q.replace(/\s/g, '')
-    const orders = index.orders
-      .filter((o) => o.id.toLowerCase().includes(q) || o.customer.name.toLowerCase().includes(q) || o.customer.phone.includes(compact) || o.items.some((i) => i.name.toLowerCase().includes(q)))
-      .slice(0, 5)
-      .map((o) => ({ type: 'order', id: o.id, to: `/orders/${o.id}`, title: o.id, subtitle: `${o.customer.name} · ${o.items.length} line(s)`, status: o.status }))
-    const customers = index.customers
-      .filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(compact) || c.id.toLowerCase().includes(q))
-      .slice(0, 4)
-      .map((c) => ({ type: 'customer', id: c.id, to: `/customers/${c.id}`, title: c.name, subtitle: `${c.id} · ${displayPhone(c.phone)}` }))
-    return [...orders, ...customers]
-  }, [q, index])
+  const searching = q.length >= 2 && found?.q !== q && !error
+  const results = q.length >= 2 && found?.q === q ? found.results : []
 
   const go = (r) => {
     navigate(r.to)
@@ -101,7 +95,7 @@ export default function GlobalSearch({ className = '', autoFocus = false, inline
             setActive(0)
             setOpen(true)
           }}
-          onFocus={ensureIndex}
+          onFocus={() => setOpen(true)}
           autoFocus={autoFocus}
           enterKeyHint="search"
           onKeyDown={onKeyDown}
@@ -116,11 +110,15 @@ export default function GlobalSearch({ className = '', autoFocus = false, inline
       </div>
 
       {inline && !q && (
-        <p className="px-2 pt-8 text-center text-[13px] text-muted">Search by order number, customer name, phone number or garment.</p>
+        <p className="px-2 pt-8 text-center text-[13px] text-muted">Search by order number, phone number, or the start of a client’s name.</p>
       )}
       {open && q && (
         <div id="global-search-results" role="listbox" className={inline ? 'mt-3 animate-fade-in overflow-hidden rounded-xl border border-line bg-white' : 'absolute left-0 right-0 top-12 z-40 animate-fade-in overflow-hidden rounded-xl border border-line bg-white shadow-pop'}>
-          {loading || !index ? (
+          {q.length < 2 ? (
+            <div className="px-4 py-6 text-center text-sm text-muted">Type at least 2 characters.</div>
+          ) : error ? (
+            <div className="px-4 py-6 text-center text-sm text-red-600">{error.message}</div>
+          ) : searching ? (
             <div className="flex items-center gap-2 px-4 py-6 text-sm text-muted">
               <LoaderCircle size={16} className="animate-spin" /> Searching…
             </div>

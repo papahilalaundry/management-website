@@ -37,17 +37,23 @@ export const PAYMENT_STATUSES = [
   { value: 'paid', label: 'Paid' },
 ]
 
+/** How customers pay for laundry. Paybill and M-Pesa number payments record the payer's name. */
 export const PAYMENT_METHODS = [
-  { value: 'mpesa', label: 'M-Pesa' },
+  { value: 'paybill', label: 'Paybill' },
+  { value: 'mpesa_number', label: 'M-Pesa number' },
   { value: 'cash', label: 'Cash' },
 ]
+export const PAYMENT_METHOD_VALUES = PAYMENT_METHODS.map((m) => m.value)
+/** Methods that go through Safaricom M-Pesa (payer name required, optional M-Pesa code). */
+export const MPESA_METHODS = ['paybill', 'mpesa_number']
+export const isMpesaMethod = (m) => MPESA_METHODS.includes(m)
 export const EXPENSE_PAYMENT_METHODS = [
   { value: 'mpesa', label: 'M-Pesa' },
   { value: 'cash', label: 'Cash' },
   { value: 'bank', label: 'Bank Transfer' },
 ]
 export const methodLabel = (m) =>
-  [...PAYMENT_METHODS, ...EXPENSE_PAYMENT_METHODS].find((x) => x.value === m)?.label ?? m
+  [...PAYMENT_METHODS, ...EXPENSE_PAYMENT_METHODS].find((x) => x.value === m)?.label ?? (m === 'mpesa' ? 'M-Pesa' : m)
 
 export const PRIORITIES = [
   { value: 'normal', label: 'Normal', days: 2 },
@@ -55,12 +61,33 @@ export const PRIORITIES = [
   { value: 'urgent', label: 'Urgent', days: 0 },
 ]
 
-export const PRICING_MODELS = [
-  { value: 'per_item', label: 'Per item', unit: 'item' },
-  { value: 'per_kg', label: 'Per kilogram', unit: 'kg' },
-  { value: 'fixed', label: 'Fixed price', unit: 'job' },
+/** Laundry is priced by weight. Garments are still counted per order for tracking. */
+export const PRICING_MODELS = [{ value: 'per_kg', label: 'Per kilogram', unit: 'kg' }]
+export const pricingUnit = () => 'kg'
+export const DEFAULT_RATE_PER_KG = 50
+
+/* ---- Clients ---- */
+export const CLIENT_TYPES = [
+  { value: 'new', label: 'New client' },
+  { value: 'regular', label: 'Regular client' },
 ]
-export const pricingUnit = (model) => PRICING_MODELS.find((p) => p.value === model)?.unit ?? 'item'
+/** A client becomes "regular" from this many (non-cancelled) orders. */
+export const REGULAR_AFTER_ORDERS = 2
+export const clientTypeLabel = (t) => CLIENT_TYPES.find((c) => c.value === t)?.label ?? 'New client'
+
+/* ---- Client feedback on an order ---- */
+export const FEEDBACK_RATINGS = [
+  { value: 5, label: 'Excellent' },
+  { value: 4, label: 'Good' },
+  { value: 3, label: 'Okay' },
+  { value: 2, label: 'Poor' },
+  { value: 1, label: 'Very poor' },
+]
+
+/* ---- Sign-in: staff type a username; Firebase Auth uses username@domain ---- */
+export const LOGIN_EMAIL_DOMAIN = 'papahilalaundry.com'
+export const normalizeUsername = (u = '') => String(u).trim().toLowerCase().replace(/@.*$/, '')
+export const usernameToEmail = (u) => `${normalizeUsername(u)}@${LOGIN_EMAIL_DOMAIN}`
 
 export const GARMENT_CATALOG = {
   Clothing: [

@@ -1,11 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { isToday } from 'date-fns'
-import { Banknote, CircleDollarSign, ClipboardList, Download, Eye, FileSpreadsheet, FileText, HandCoins, MoreHorizontal, Plus, Printer, Smartphone, Wallet, CalendarCheck } from 'lucide-react'
+import { Banknote, Building2, CircleDollarSign, ClipboardList, Download, Eye, FileSpreadsheet, FileText, HandCoins, MoreHorizontal, Plus, Printer, Smartphone, Wallet, CalendarCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { paymentService } from '../services'
 import { useAsync } from '../hooks/useAsync'
-import { useTable } from '../hooks/useTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
 import { useDebounce } from '../hooks/useDebounce'
 import PageHeader from '../components/layout/PageHeader'
 import Button from '../components/ui/Button'
@@ -27,16 +26,22 @@ import { formatDate, formatDateTime, formatTime } from '../utils/formatDate'
 import { methodLabel, PAYMENT_METHODS } from '../data/constants'
 import { exportCsv, exportExcel } from '../utils/exporters'
 
+const shortfall = (p) => (p.expectedAmount != null && p.amount < p.expectedAmount ? p.expectedAmount - p.amount : 0)
+
 const EXPORT_COLUMNS = [
   { header: 'Transaction ID', value: (p) => p.id },
   { header: 'Order ID', value: (p) => p.orderId },
-  { header: 'Customer', value: (p) => p.customerName },
-  { header: 'Date', value: (p) => formatDateTime(p.paidAt) },
-  { header: 'Method', value: (p) => methodLabel(p.method) },
-  { header: 'Amount (KES)', value: (p) => p.amount },
-  { header: 'Reference', value: (p) => p.reference },
+  { header: 'Client', value: (p) => p.customerName },
+  { header: 'Date paid', value: (p) => formatDateTime(p.paidAt) },
+  { header: 'Mode', value: (p) => methodLabel(p.method) },
+  { header: 'Paid by (M-Pesa name)', value: (p) => p.payerName },
+  { header: 'Estimated (KES)', value: (p) => p.expectedAmount ?? '' },
+  { header: 'Paid (KES)', value: (p) => p.amount },
+  { header: 'Difference (KES)', value: (p) => shortfall(p) || '' },
+  { header: 'M-Pesa code', value: (p) => p.reference },
   { header: 'Recorded by', value: (p) => p.recordedByName },
 ]
+const WATCH = ['payments']
 
 export default function Payments() {
   const navigate = useNavigate()
@@ -45,57 +50,52 @@ export default function Payments() {
   const [method, setMethod] = useState('')
   const [recording, setRecording] = useState(false)
   const [receipt, setReceipt] = useState(null)
-  const q = useDebounce(query.trim().toLowerCase(), 200)
+  const search = useDebounce(query.trim(), 300)
+  const filters = { from: range.from, to: range.to, method }
 
-  const { data, loading, error, reload } = useAsync(() => paymentService.getPayments(), [], { live: true, watch: ['payments'] })
-  const { data: payable } = useAsync(() => paymentService.getPayableOrders(), [], { live: true, watch: ['payments', 'orders'] })
-  const payments = useMemo(() => data ?? [], [data])
-
-  const inRange = useMemo(() => payments.filter((p) => p.paidAt >= range.from && p.paidAt <= range.to), [payments, range])
-  const stats = useMemo(() => ({
-    total: inRange.reduce((s, p) => s + p.amount, 0),
-    count: inRange.length,
-    today: payments.filter((p) => isToday(new Date(p.paidAt))).reduce((s, p) => s + p.amount, 0),
-    todayCount: payments.filter((p) => isToday(new Date(p.paidAt))).length,
-    mpesa: inRange.filter((p) => p.method === 'mpesa').reduce((s, p) => s + p.amount, 0),
-    cash: inRange.filter((p) => p.method === 'cash').reduce((s, p) => s + p.amount, 0),
-    outstanding: (payable ?? []).reduce((s, o) => s + o.balance, 0),
-    outstandingCount: (payable ?? []).length,
-  }), [inRange, payments, payable])
-
-  const filtered = useMemo(() => inRange.filter((p) => {
-    if (method && p.method !== method) return false
-    if (q && !(p.id.toLowerCase().includes(q) || p.orderId.toLowerCase().includes(q) || p.customerName.toLowerCase().includes(q) || p.reference.toLowerCase().includes(q))) return false
-    return true
-  }), [inRange, method, q])
-
-  const table = useTable(filtered, { pageSize: 15, initialSort: { key: 'paidAt', dir: 'desc' }, resetKey: `${q}|${method}|${range.from}|${range.to}` })
-  const pct = (v) => (stats.total ? Math.round((v / stats.total) * 100) : 0)
+  const { data: stats } = useAsync(() => paymentService.getPaymentStats({ from: range.from, to: range.to }), [range.from, range.to], { live: true, watch: ['payments', 'orders'] })
+  const fetchPage = useCallback(
+    ({ pageSize, cursor }) => paymentService.listPayments({ from: range.from, to: range.to, method, search, pageSize, cursor }),
+    [range.from, range.to, method, search],
+  )
+  const table = usePagedQuery(fetchPage, {
+    key: JSON.stringify([range.from, range.to, method, search]),
+    pageSize: 15,
+    count: () => paymentService.countPayments({ from: range.from, to: range.to, method }),
+    watch: WATCH,
+  })
+  const byMethod = stats?.byMethod ?? {}
+  const pct = (v) => (stats?.total ? Math.round(((v || 0) / stats.total) * 100) : 0)
+  const pageTotal = table.pageRows.reduce((s, p) => s + p.amount, 0)
 
   const doExport = async (kind) => {
-    if (!table.sorted.length) return toast.error('No payments to export for this period.')
-    const name = 'papa-hila-payments'
     try {
-      if (kind === 'xlsx') await exportExcel([{ name: 'Payments', rows: table.sorted, columns: EXPORT_COLUMNS }], name)
-      else exportCsv(table.sorted, EXPORT_COLUMNS, name)
-      toast.success(`Exported ${table.sorted.length} payments`)
-    } catch {
-      toast.error('Export failed.')
+      const rows = search ? table.pageRows : await paymentService.exportPayments(filters)
+      if (!rows.length) return toast.error('No payments to export for this period.')
+      const name = 'papa-hila-payments'
+      if (kind === 'xlsx') await exportExcel([{ name: 'Payments', rows, columns: EXPORT_COLUMNS }], name)
+      else exportCsv(rows, EXPORT_COLUMNS, name)
+      toast.success(`Exported ${rows.length} payments`)
+    } catch (e) {
+      toast.error(e.message || 'Export failed.')
     }
   }
 
   const columns = [
-    { key: 'id', header: 'Transaction', sortable: true, render: (p) => <span className="font-mono text-xs font-bold text-ink">{p.id}</span> },
-    { key: 'orderId', header: 'Order', sortable: true, render: (p) => <Link to={`/orders/${p.orderId}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-brand hover:underline">{p.orderId}</Link> },
+    { key: 'id', header: 'Transaction', render: (p) => <span className="font-mono text-xs font-bold text-ink">{p.id}</span> },
+    { key: 'orderId', header: 'Order', render: (p) => <Link to={`/orders/${p.orderId}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-brand hover:underline">{p.orderId}</Link> },
     {
-      key: 'customerName', header: 'Customer', sortable: true,
+      key: 'customerName', header: 'Client',
       render: (p) => <div className="flex items-center gap-2.5"><Avatar name={p.customerName} size="xs" /><span className="max-w-[160px] truncate font-medium text-ink">{p.customerName}</span></div>,
     },
-    { key: 'paidAt', header: 'Date', sortable: true, hideBelow: 'md', render: (p) => <div><p className="text-[13px]">{formatDate(p.paidAt)}</p><p className="text-[11px] text-muted">{formatTime(p.paidAt)}</p></div> },
-    { key: 'method', header: 'Method', sortable: true, render: (p) => <MethodBadge method={p.method} /> },
-    { key: 'amount', header: 'Amount', sortable: true, align: 'right', render: (p) => <span className="font-bold text-ink">{formatCurrency(p.amount)}</span> },
-    { key: 'recordedByName', header: 'Recorded by', sortable: true, hideBelow: 'lg', render: (p) => <span className="text-slate-600">{p.recordedByName}</span> },
-    { key: 'reference', header: 'Reference', hideBelow: 'xl', render: (p) => <span className="font-mono text-xs text-slate-500">{p.reference || '—'}</span> },
+    { key: 'payerName', header: 'Paid by', hideBelow: 'lg', render: (p) => (p.payerName ? <span className="text-slate-700">{p.payerName}</span> : <span className="text-slate-300">—</span>) },
+    { key: 'paidAt', header: 'Date paid', hideBelow: 'md', render: (p) => <div><p className="text-[13px]">{formatDate(p.paidAt)}</p><p className="text-[11px] text-muted">{formatTime(p.paidAt)}</p></div> },
+    { key: 'method', header: 'Mode', render: (p) => <MethodBadge method={p.method} /> },
+    { key: 'expectedAmount', header: 'Estimated', align: 'right', hideBelow: 'xl', render: (p) => <span className="text-slate-500">{p.expectedAmount != null ? formatCurrency(p.expectedAmount) : '—'}</span> },
+    { key: 'amount', header: 'Paid', align: 'right', render: (p) => <span className="font-bold text-ink">{formatCurrency(p.amount)}</span> },
+    { key: 'difference', header: 'Difference', align: 'right', hideBelow: 'xl', render: (p) => (shortfall(p) ? <span className="font-semibold text-amber-700">−{formatCurrency(shortfall(p))}</span> : <span className="text-slate-300">—</span>) },
+    { key: 'reference', header: 'M-Pesa code', hideBelow: 'xl', render: (p) => <span className="font-mono text-xs text-slate-500">{p.reference || '—'}</span> },
+    { key: 'recordedByName', header: 'Recorded by', hideBelow: 'lg', render: (p) => <span className="text-slate-600">{p.recordedByName}</span> },
     {
       key: 'actions', header: <span className="sr-only">Actions</span>, align: 'right',
       render: (p) => (
@@ -110,12 +110,13 @@ export default function Payments() {
       ),
     },
   ]
+  const amountCol = columns.findIndex((c) => c.key === 'amount')
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Payments"
-        description="M-Pesa and cash payments recorded against orders."
+        description="Paybill, M-Pesa number and cash payments recorded against orders."
         actions={
           <>
             <DateRangeFilter value={range} onChange={setRange} />
@@ -124,52 +125,59 @@ export default function Payments() {
           </>
         }
       />
-      <p className="-mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">M-Pesa payments are recorded manually and simulated — this system does not connect to Safaricom or move real money.</p>
+      <p className="-mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Payments are entered by staff from the M-Pesa message or the cash received. No money moves through this system.</p>
 
-      <section className="stat-strip grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-5" aria-label="Payment statistics">
-        <MiniStat label="Total received" value={formatCurrency(stats.total, { decimals: 0 })} icon={CircleDollarSign} tone="navy" sub={`${formatNumber(stats.count)} payments · ${describeRange(range).toLowerCase()}`} />
-        <MiniStat label="Received today" value={formatCurrency(stats.today, { decimals: 0 })} icon={CalendarCheck} tone="blue" sub={`${stats.todayCount} payment${stats.todayCount === 1 ? '' : 's'}`} />
-        <MiniStat label="M-Pesa" value={formatCurrency(stats.mpesa, { decimals: 0 })} icon={Smartphone} tone="green" sub={`${pct(stats.mpesa)}% of period total`} />
-        <MiniStat label="Cash" value={formatCurrency(stats.cash, { decimals: 0 })} icon={Banknote} tone="slate" sub={`${pct(stats.cash)}% of period total`} />
-        <MiniStat label="Outstanding balances" value={formatCurrency(stats.outstanding, { decimals: 0 })} icon={HandCoins} tone="red" sub={`${stats.outstandingCount} unpaid orders`} />
+      <section className="stat-strip grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6" aria-label="Payment statistics">
+        <MiniStat label="Total received" value={stats ? formatCurrency(stats.total, { decimals: 0 }) : '—'} icon={CircleDollarSign} tone="navy" sub={stats ? `${formatNumber(stats.count)} payments · ${describeRange(range).toLowerCase()}` : undefined} />
+        <MiniStat label="Received today" value={stats ? formatCurrency(stats.today, { decimals: 0 }) : '—'} icon={CalendarCheck} tone="blue" sub={stats ? `${stats.todayCount} payment${stats.todayCount === 1 ? '' : 's'}` : undefined} />
+        <MiniStat label="Paybill" value={stats ? formatCurrency(byMethod.paybill || 0, { decimals: 0 }) : '—'} icon={Building2} tone="green" sub={stats ? `${pct(byMethod.paybill)}% of period total` : undefined} />
+        <MiniStat label="M-Pesa number" value={stats ? formatCurrency(byMethod.mpesa_number || 0, { decimals: 0 }) : '—'} icon={Smartphone} tone="cyan" sub={stats ? `${pct(byMethod.mpesa_number)}% of period total` : undefined} />
+        <MiniStat label="Cash" value={stats ? formatCurrency(byMethod.cash || 0, { decimals: 0 }) : '—'} icon={Banknote} tone="slate" sub={stats ? `${pct(byMethod.cash)}% of period total` : undefined} />
+        <MiniStat label="Outstanding balances" value={stats ? formatCurrency(stats.outstanding, { decimals: 0 }) : '—'} icon={HandCoins} tone="red" sub={stats ? `${stats.outstandingCount} unpaid order${stats.outstandingCount === 1 ? '' : 's'}` : undefined} />
       </section>
 
       <Card>
         <div className="flex flex-col gap-2 border-b border-line p-4 sm:flex-row">
-          <SearchInput value={query} onChange={setQuery} placeholder="Search transaction, order, customer or M-Pesa ref…" className="flex-1" />
-          <Select aria-label="Payment method" value={method} onChange={(e) => setMethod(e.target.value)} placeholder="All methods" options={PAYMENT_METHODS} className="sm:w-48" />
+          <SearchInput value={query} onChange={setQuery} placeholder="Search transaction, order, client, payer name or M-Pesa code…" className="flex-1" />
+          <Select aria-label="Mode of payment" value={method} onChange={(e) => setMethod(e.target.value)} placeholder="All modes" options={PAYMENT_METHODS} className="sm:w-48" />
         </div>
-        {error && !data ? (
-          <ErrorState error={error} onRetry={reload} />
+        {table.error && !table.loaded ? (
+          <ErrorState error={table.error} onRetry={table.reload} />
         ) : (
           <DataTable
             columns={columns}
             table={table}
-            loading={loading && !data}
+            loading={table.loading && !table.pageRows.length}
             onRowClick={(p) => setReceipt(p)}
             getRowLabel={(p) => `View receipt ${p.id}`}
             mobileCard={{
               leading: (p) => <Avatar name={p.customerName} size="md" />,
               title: (p) => p.customerName,
               subtitle: (p) => <><span className="font-mono font-semibold text-slate-600">{p.orderId}</span> · {formatDate(p.paidAt)}, {formatTime(p.paidAt)}</>,
-              meta: (p) => (p.reference ? <span className="font-mono">{p.reference}</span> : null),
+              meta: (p) => (
+                <>
+                  {p.payerName && <span>From {p.payerName}</span>}
+                  {p.reference && <span className="font-mono">{p.reference}</span>}
+                  {shortfall(p) > 0 && <span className="text-amber-700">{formatCurrency(shortfall(p), { decimals: 0 })} below estimate</span>}
+                </>
+              ),
               value: (p) => formatCurrency(p.amount, { decimals: 0 }),
               badge: (p) => <MethodBadge method={p.method} />,
             }}
             mobileFooter={
               <div className="flex items-center justify-between text-[13px] font-bold">
-                <span className="text-muted">Total · {table.total} payment{table.total === 1 ? '' : 's'}</span>
-                <span className="tabular-nums text-ink">{formatCurrency(filtered.reduce((s, p) => s + p.amount, 0))}</span>
+                <span className="text-muted">This page · {table.pageRows.length} payment{table.pageRows.length === 1 ? '' : 's'}</span>
+                <span className="tabular-nums text-ink">{formatCurrency(pageTotal)}</span>
               </div>
             }
-            empty={<EmptyState icon={Wallet} title="No payments in this period" description="Try a wider date range or record a new payment." action={<Button icon={Plus} onClick={() => setRecording(true)}>Record payment</Button>} />}
+            empty={<EmptyState icon={Wallet} title="No payments found" description="Try a wider date range, another mode, or record a new payment." action={<Button icon={Plus} onClick={() => setRecording(true)}>Record payment</Button>} />}
             footer={
-              table.total > 0 && (
+              table.pageRows.length > 0 && (
                 <tfoot>
                   <tr className="bg-slate-50/80 text-[13px] font-bold">
-                    <td colSpan={5} className="px-4 py-3 text-muted">Total for {table.total} payment{table.total === 1 ? '' : 's'}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-ink">{formatCurrency(filtered.reduce((s, p) => s + p.amount, 0))}</td>
-                    <td colSpan={3} />
+                    <td colSpan={amountCol} className="px-4 py-3 text-muted">Total for this page ({table.pageRows.length} payment{table.pageRows.length === 1 ? '' : 's'})</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-ink">{formatCurrency(pageTotal)}</td>
+                    <td colSpan={columns.length - amountCol - 1} />
                   </tr>
                 </tfoot>
               )

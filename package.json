@@ -12,6 +12,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.4",
     "date-fns": "^4.4.0",
+    "firebase": "^13.2.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
     "lucide-react": "^1.68.0",

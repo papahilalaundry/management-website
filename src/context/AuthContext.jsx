@@ -1,6 +1,7 @@
 /**
- * Authentication state. NOTE: backed by the SIMULATED authService — see
- * services/authService.js for what must change before production.
+ * Authentication state, backed by Firebase Authentication (see
+ * services/authService.js). The signed-in staff profile is restored before
+ * the app renders, so the first render already knows who is signed in.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { authService, CHANGE_EVENT } from '../services'
@@ -11,17 +12,19 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => authService.restoreSession())
 
-  // Keep the signed-in user fresh (e.g. after editing your own profile) and
-  // sign out if the account is deactivated or demo data is reset.
+  // Keep the signed-in user fresh: after editing your own profile, when an
+  // admin deactivates the account, or when you sign out in another tab.
   useEffect(() => {
     const onChange = (e) => {
-      if (!e.detail?.collections?.includes('staff')) return
+      const cols = e.detail?.collections ?? []
+      if (!cols.includes('staff') && !cols.includes('session')) return
       setUser(authService.restoreSession())
     }
     window.addEventListener(CHANGE_EVENT, onChange)
     return () => window.removeEventListener(CHANGE_EVENT, onChange)
   }, [])
 
+  /** credentials: { username, password, remember } */
   const login = useCallback(async (credentials) => {
     const u = await authService.login(credentials)
     setUser(u)

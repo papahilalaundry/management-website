@@ -8,20 +8,20 @@ import PageHeader from '../components/layout/PageHeader'
 import Button from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import Modal, { ConfirmDialog } from '../components/ui/Modal'
-import { Field, Input, Select, Switch, Textarea } from '../components/ui/Field'
+import { Field, Input, Switch, Textarea } from '../components/ui/Field'
 import Dropdown from '../components/ui/Dropdown'
 import Badge from '../components/ui/Badge'
 import Tabs from '../components/ui/Tabs'
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState, { ErrorState } from '../components/ui/EmptyState'
 import { MiniStat } from '../components/shared/StatCard'
-import { PRICING_MODELS, pricingUnit } from '../data/constants'
+import { DEFAULT_RATE_PER_KG } from '../data/constants'
 import { formatCurrency, formatNumber } from '../utils/formatCurrency'
 import { formatDate } from '../utils/formatDate'
 import { validateService } from '../utils/validators'
 
 const ICONS = { 'SRV-01': WashingMachine, 'SRV-02': Shirt, 'SRV-03': Flame, 'SRV-04': Sparkles, 'SRV-05': BedDouble, 'SRV-06': Layers, 'SRV-07': Blinds, 'SRV-08': Shirt, 'SRV-09': Weight, 'SRV-10': Wind }
-const EMPTY = { name: '', description: '', pricingModel: 'per_item', price: '', active: true }
+const EMPTY = { name: '', description: '', pricingModel: 'per_kg', price: String(DEFAULT_RATE_PER_KG), active: true }
 
 function ServiceFormModal({ open, onClose, service, onSaved }) {
   const [form, setForm] = useState(EMPTY)
@@ -31,7 +31,7 @@ function ServiceFormModal({ open, onClose, service, onSaved }) {
   if (open !== lastOpen) {
     setLastOpen(open)
     if (open) {
-      setForm(service ? { name: service.name, description: service.description, pricingModel: service.pricingModel, price: String(service.price), active: service.active } : EMPTY)
+      setForm(service ? { name: service.name, description: service.description ?? '', pricingModel: 'per_kg', price: String(service.price), active: service.active !== false } : EMPTY)
       setErrors({})
     }
   }
@@ -55,18 +55,17 @@ function ServiceFormModal({ open, onClose, service, onSaved }) {
     }
   }
   return (
-    <Modal open={open} onClose={onClose} icon={service ? Pencil : Plus} title={service ? `Edit ${service.name}` : 'Add service'} description="Prices are used as defaults on new orders."
+    <Modal open={open} onClose={onClose} icon={service ? Pencil : Plus} title={service ? `Edit ${service.name}` : 'Add service'} description="Laundry is charged by weight: kg × this rate."
       footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button type="submit" form="service-form" loading={saving}>{service ? 'Save changes' : 'Add service'}</Button></>}>
       <form id="service-form" onSubmit={submit} noValidate className="space-y-4">
-        <Field label="Service name" required error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={set('name')} placeholder="e.g. Shoe Cleaning" />}</Field>
+        <Field label="Service name" required error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={set('name')} placeholder="e.g. Wash & iron" />}</Field>
         <Field label="Description" optional>{(p) => <Textarea {...p} rows={2} value={form.description} onChange={set('description')} placeholder="What’s included in this service" />}</Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Pricing model" required error={errors.pricingModel}>{(p) => <Select {...p} value={form.pricingModel} onChange={set('pricingModel')} options={PRICING_MODELS} />}</Field>
-          <Field label={`Price per ${pricingUnit(form.pricingModel)}`} required error={errors.price}>{(p) => <Input {...p} type="number" min="0" step="10" prefix="KES" value={form.price} onChange={set('price')} />}</Field>
-        </div>
+        <Field label="Rate per kg" required error={errors.price} hint={errors.price ? undefined : `Default ${formatCurrency(DEFAULT_RATE_PER_KG, { decimals: 0 })} per kg. Garments are still counted on each order, but not priced individually.`}>
+          {(p) => <Input {...p} type="number" min="1" step="1" prefix="KES" suffix="/kg" value={form.price} onChange={set('price')} />}
+        </Field>
         <div className="rounded-xl border border-line p-3.5"><Switch checked={form.active} onChange={set('active')} label="Available for new orders" description="Inactive services are hidden when creating orders." /></div>
         {service && Number(form.price) !== service.price && form.price !== '' && (
-          <p className="flex items-start gap-2 rounded-lg bg-sky-soft px-3 py-2 text-xs text-navy-800"><Info size={14} className="mt-0.5 shrink-0 text-brand" /> Changing from {formatCurrency(service.price)} to {formatCurrency(form.price)} affects new orders only. Existing orders keep the price agreed at drop-off.</p>
+          <p className="flex items-start gap-2 rounded-lg bg-sky-soft px-3 py-2 text-xs text-navy-800"><Info size={14} className="mt-0.5 shrink-0 text-brand" /> Changing from {formatCurrency(service.price)} to {formatCurrency(form.price)} affects new orders only. Existing orders keep the rate agreed at drop-off.</p>
         )}
       </form>
     </Modal>
@@ -83,14 +82,15 @@ export default function Services() {
   const [busy, setBusy] = useState(false)
 
   const services = data ?? []
-  const shown = services.filter((s) => (view === 'active' ? s.active : view === 'inactive' ? !s.active : true))
-  const avg = services.length ? services.filter((s) => s.pricingModel === 'per_item').reduce((a, s) => a + s.price, 0) / Math.max(1, services.filter((s) => s.pricingModel === 'per_item').length) : 0
-  const top = [...services].sort((a, b) => b.garmentCount - a.garmentCount)[0]
+  const shown = services.filter((s) => (view === 'active' ? s.active !== false : view === 'inactive' ? s.active === false : true))
+  const active = services.filter((s) => s.active !== false)
+  const avg = active.length ? active.reduce((a, s) => a + s.price, 0) / active.length : 0
+  const top = [...services].sort((a, b) => (b.orderCount ?? 0) - (a.orderCount ?? 0))[0]
 
   const toggle = async (s) => {
     try {
-      await catalogService.setServiceActive(s.id, !s.active)
-      toast.success(`${s.name} ${s.active ? 'deactivated' : 'activated'}`)
+      await catalogService.setServiceActive(s.id, s.active === false)
+      toast.success(`${s.name} ${s.active !== false ? 'deactivated' : 'activated'}`)
       reload({ silent: true })
     } catch (e) {
       toast.error(e.message)
@@ -115,23 +115,23 @@ export default function Services() {
     <div className="space-y-6">
       <PageHeader
         title="Services & Pricing"
-        description="Your service catalogue and default prices."
+        description="Your services and their rate per kg."
         actions={manage && <Button icon={Plus} onClick={() => setModal({})}>Add service</Button>}
       />
       {!manage && (
         <div className="flex items-center gap-2 rounded-xl border border-line bg-white px-4 py-3 text-[13px] text-slate-600">
-          <Info size={16} className="text-brand" /> You can view the catalogue. Only administrators can change services and prices.
+          <Info size={16} className="text-brand" /> You can view the catalogue. Only administrators can change services and rates.
         </div>
       )}
 
       <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MiniStat label="Services" value={formatNumber(services.length)} icon={Tag} tone="blue" />
-        <MiniStat label="Active" value={formatNumber(services.filter((s) => s.active).length)} icon={Power} tone="green" />
-        <MiniStat label="Average item price" value={formatCurrency(avg, { decimals: 0 })} icon={Shirt} tone="violet" sub="Per-item services" />
-        <MiniStat label="Most popular" value={top?.name ?? '—'} icon={Sparkles} tone="amber" sub={top ? `${formatNumber(top.garmentCount)} items processed` : undefined} />
+        <MiniStat label="Active" value={formatNumber(active.length)} icon={Power} tone="green" />
+        <MiniStat label="Average rate" value={`${formatCurrency(avg, { decimals: 0 })}/kg`} icon={Weight} tone="violet" sub="Active services" />
+        <MiniStat label="Most popular" value={top?.name ?? '—'} icon={Sparkles} tone="amber" sub={top ? `${formatNumber(top.orderCount ?? 0)} orders` : undefined} />
       </section>
 
-      <Tabs variant="pills" className="w-fit" value={view} onChange={setView} tabs={[{ value: 'all', label: 'All', count: services.length }, { value: 'active', label: 'Active', count: services.filter((s) => s.active).length }, { value: 'inactive', label: 'Inactive', count: services.filter((s) => !s.active).length }]} />
+      <Tabs variant="pills" className="w-fit" value={view} onChange={setView} tabs={[{ value: 'all', label: 'All', count: services.length }, { value: 'active', label: 'Active', count: active.length }, { value: 'inactive', label: 'Inactive', count: services.length - active.length }]} />
 
       {error && !data ? (
         <Card><ErrorState error={error} onRetry={reload} /></Card>
@@ -144,16 +144,16 @@ export default function Services() {
           {shown.map((s) => {
             const Icon = ICONS[s.id] ?? Tag
             return (
-              <Card key={s.id} className={`flex flex-col p-5 transition hover:border-slate-300 ${s.active ? '' : 'bg-slate-50/60'}`}>
+              <Card key={s.id} className={`flex flex-col p-5 transition hover:border-slate-300 ${s.active !== false ? '' : 'bg-slate-50/60'}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${s.active ? 'bg-sky-soft text-brand' : 'bg-slate-100 text-slate-400'}`}><Icon size={20} /></span>
+                  <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${s.active !== false ? 'bg-sky-soft text-brand' : 'bg-slate-100 text-slate-400'}`}><Icon size={20} /></span>
                   <div className="flex items-center gap-1">
-                    {s.active ? <Badge tone="green" dot>Available</Badge> : <Badge tone="slate" dot>Inactive</Badge>}
+                    {s.active !== false ? <Badge tone="green" dot>Available</Badge> : <Badge tone="slate" dot>Inactive</Badge>}
                     {manage && (
                       <Dropdown
                         items={[
                           { label: 'Edit service', icon: Pencil, onClick: () => setModal({ service: s }) },
-                          { label: s.active ? 'Deactivate' : 'Activate', icon: s.active ? PowerOff : Power, onClick: () => toggle(s) },
+                          { label: s.active !== false ? 'Deactivate' : 'Activate', icon: s.active !== false ? PowerOff : Power, onClick: () => toggle(s) },
                           { divider: true },
                           { label: 'Delete', icon: Trash2, danger: true, onClick: () => setDeleting(s), disabled: s.orderCount > 0 },
                         ]}
@@ -167,10 +167,10 @@ export default function Services() {
                 <div className="mt-4 flex items-end justify-between border-t border-line pt-4">
                   <div>
                     <p className="text-[22px] font-extrabold tabular-nums text-ink">{formatCurrency(s.price, { decimals: 0 })}</p>
-                    <p className="text-xs text-muted">per {pricingUnit(s.pricingModel)} · {PRICING_MODELS.find((m) => m.value === s.pricingModel)?.label}</p>
+                    <p className="text-xs text-muted">per kg</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[13px] font-bold tabular-nums text-ink">{formatNumber(s.orderCount)} orders</p>
+                    <p className="text-[13px] font-bold tabular-nums text-ink">{formatNumber(s.orderCount ?? 0)} orders</p>
                     <p className="text-xs text-muted">Updated {formatDate(s.updatedAt)}</p>
                   </div>
                 </div>

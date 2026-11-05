@@ -4,6 +4,8 @@
  * inline errors) and the mock API (server-side style validation).
  */
 
+import { isMpesaMethod, PAYMENT_METHOD_VALUES } from '../data/constants'
+
 export const normalizePhone = (phone = '') => String(phone).replace(/[\s()-]/g, '')
 
 /** Accepts 07XXXXXXXX, 01XXXXXXXX, +2547XXXXXXXX, 2541XXXXXXXX */
@@ -41,17 +43,26 @@ export function validateCustomer(data) {
   return e
 }
 
+/**
+ * @param data { orderId, method, amount (actually paid), expectedAmount (estimated), payerName, reference, paidAt }
+ */
 export function validatePayment(data, { outstanding } = {}) {
   const e = {}
   const amount = Number(data.amount)
   if (!data.orderId) e.orderId = 'Select an order'
-  if (!data.amount || Number.isNaN(amount) || amount <= 0) e.amount = 'Amount must be greater than zero'
+  if (!data.amount || Number.isNaN(amount) || amount <= 0) e.amount = 'Amount paid must be greater than zero'
   else if (outstanding != null && amount > outstanding + 0.001)
-    e.amount = `Amount cannot exceed the outstanding balance`
-  if (!data.method) e.method = 'Select a payment method'
-  if (data.method === 'mpesa' && data.reference?.trim() && !isValidMpesaRef(data.reference))
+    e.amount = 'Amount cannot exceed the outstanding balance'
+  if (data.expectedAmount !== undefined && data.expectedAmount !== '' && data.expectedAmount !== null) {
+    const exp = Number(data.expectedAmount)
+    if (Number.isNaN(exp) || exp < 0) e.expectedAmount = 'Estimated amount cannot be negative'
+  }
+  if (!PAYMENT_METHOD_VALUES.includes(data.method)) e.method = 'Select Paybill, M-Pesa number or Cash'
+  if (isMpesaMethod(data.method) && !data.payerName?.trim()) e.payerName = 'Enter the name shown on the M-Pesa message'
+  if (isMpesaMethod(data.method) && data.reference?.trim() && !isValidMpesaRef(data.reference))
     e.reference = 'M-Pesa codes are 10 letters/digits, e.g. SKD4H7J2LQ'
   if (!data.paidAt) e.paidAt = 'Payment date is required'
+  else if (new Date(data.paidAt).getTime() > Date.now() + 5 * 60e3) e.paidAt = 'Payment date cannot be in the future'
   return e
 }
 
@@ -80,16 +91,28 @@ export function validateInventoryItem(data) {
 export function validateService(data) {
   const e = {}
   if (!data.name?.trim()) e.name = 'Service name is required'
-  if (!data.pricingModel) e.pricingModel = 'Select a pricing model'
-  if (data.price === '' || Number.isNaN(Number(data.price)) || Number(data.price) < 0) e.price = 'Price must be zero or more'
+  if (data.price === '' || Number.isNaN(Number(data.price)) || Number(data.price) <= 0) e.price = 'Enter the price per kg'
   return e
 }
 
-export function validateStaff(data) {
+export const isValidUsername = (u) => /^[a-z0-9][a-z0-9._-]{2,29}$/.test(String(u).trim().toLowerCase())
+
+export function validatePassword(pw) {
+  if (!pw || pw.length < 8) return 'Use at least 8 characters'
+  if (!/[A-Z]/.test(pw) || !/d/.test(pw)) return 'Include an uppercase letter and a number'
+  return null
+}
+
+/** @param {object} opts { creating } — a password is required only when creating an account. */
+export function validateStaff(data, { creating = false } = {}) {
   const e = {}
   if (!data.name?.trim()) e.name = 'Full name is required'
-  if (!data.email?.trim()) e.email = 'Email is required'
-  else if (!isValidEmail(data.email)) e.email = 'Enter a valid email address'
+  if (creating) {
+    if (!data.username?.trim()) e.username = 'Username is required'
+    else if (!isValidUsername(data.username)) e.username = '3–30 characters: letters, numbers, dot, dash or underscore'
+    const pw = validatePassword(data.password)
+    if (pw) e.password = pw
+  }
   if (!data.phone?.trim()) e.phone = 'Phone number is required'
   else if (!isValidKenyanPhone(data.phone)) e.phone = 'Enter a valid Kenyan number'
   if (!data.role) e.role = 'Select a role'

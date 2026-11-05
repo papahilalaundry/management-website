@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Activity, ClipboardList, Eye, Mail, MoreHorizontal, Pencil, Phone, Power, PowerOff, ShieldCheck, UserCog, UserPlus, Users, Wallet, Camera } from 'lucide-react'
+import { Activity, AtSign, ClipboardList, Eye, KeyRound, MoreHorizontal, Pencil, Phone, Power, PowerOff, ShieldCheck, UserCog, UserPlus, Users, Wallet, Camera } from 'lucide-react'
 import { toast } from 'sonner'
 import { staffService } from '../services'
 import { useAsync } from '../hooks/useAsync'
@@ -23,12 +23,22 @@ import { MiniStat } from '../components/shared/StatCard'
 import { RoleBadge } from '../components/shared/StatusBadges'
 import ActivityFeed from '../components/shared/ActivityFeed'
 import OrderTable from '../components/orders/OrderTable'
-import { ROLE_OPTIONS } from '../data/constants'
+import { LOGIN_EMAIL_DOMAIN, normalizeUsername, ROLE_OPTIONS } from '../data/constants'
 import { formatNumber } from '../utils/formatCurrency'
 import { formatDate, timeAgo } from '../utils/formatDate'
 import { validateStaff } from '../utils/validators'
 
-const EMPTY = { name: '', email: '', phone: '', role: 'staff', title: '', status: 'active' }
+const EMPTY = { name: '', username: '', password: '', phone: '', role: 'staff', title: '', status: 'active' }
+
+/** Username input with the fixed login domain shown after it. */
+function UsernameInput({ value, onChange, ...p }) {
+  return (
+    <div className="flex items-stretch">
+      <Input {...p} value={value} onChange={onChange} autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="off" placeholder="e.g. grace" className="min-w-0 flex-1 rounded-r-none" />
+      <span className="flex shrink-0 select-none items-center rounded-r-lg border border-l-0 border-line bg-slate-50 px-2.5 text-xs font-medium text-slate-500">@{LOGIN_EMAIL_DOMAIN}</span>
+    </div>
+  )
+}
 
 function StaffFormModal({ open, onClose, member, onSaved }) {
   const { user } = useAuth()
@@ -39,21 +49,29 @@ function StaffFormModal({ open, onClose, member, onSaved }) {
   if (open !== lastOpen) {
     setLastOpen(open)
     if (open) {
-      setForm(member ? { name: member.name, email: member.email, phone: member.phone, role: member.role, title: member.title ?? '', status: member.status } : EMPTY)
+      setForm(member ? { name: member.name, username: member.username ?? '', password: '', phone: member.phone, role: member.role, title: member.title ?? '', status: member.status } : EMPTY)
       setErrors({})
     }
   }
   const isSelf = member?.id === user.id
-  const set = (k) => (e) => { setForm((f) => ({ ...f, [k]: e.target.value })); setErrors((x) => ({ ...x, [k]: undefined })) }
+  const set = (k) => (e) => {
+    const value = k === 'username' ? e.target.value.replace(/@.*$/, '').replace(/s/g, '').toLowerCase() : e.target.value
+    setForm((f) => ({ ...f, [k]: value }))
+    setErrors((x) => ({ ...x, [k]: undefined }))
+  }
   const submit = async (e) => {
     e.preventDefault()
-    const v = validateStaff(form)
+    const v = validateStaff(form, { creating: !member })
     setErrors(v)
     if (Object.keys(v).length) return
     setSaving(true)
     try {
-      const saved = member ? await staffService.updateStaff(member.id, form) : await staffService.createStaff(form)
-      toast.success(member ? `${saved.name} updated` : `${saved.name} added`, { description: member ? undefined : 'Demo default password: Welcome123!' })
+      const { username, password, ...profile } = form
+      const saved = member ? await staffService.updateStaff(member.id, profile) : await staffService.createStaff({ ...profile, username, password })
+      toast.success(member ? `${saved.name} updated` : `${saved.name} added`, {
+        description: member ? undefined : `They sign in with username “${normalizeUsername(username)}” and the password you set. Ask them to change it in Settings.`,
+        duration: member ? undefined : 10000,
+      })
       onSaved()
       onClose()
     } catch (err) {
@@ -78,10 +96,26 @@ function StaffFormModal({ open, onClose, member, onSaved }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Full name" required error={errors.name}>{(p) => <Input {...p} value={form.name} onChange={set('name')} data-autofocus />}</Field>
           <Field label="Job title" optional>{(p) => <Input {...p} value={form.title} onChange={set('title')} placeholder="e.g. Laundry Technician" />}</Field>
-          <Field label="Email" required error={errors.email}>{(p) => <Input {...p} type="email" value={form.email} onChange={set('email')} placeholder="name@papahila.com" />}</Field>
+          {member ? (
+            <Field label="Username" hint="Usernames cannot be changed.">{(p) => <UsernameInput {...p} value={form.username || '—'} disabled onChange={() => {}} />}</Field>
+          ) : (
+            <Field label="Username" required error={errors.username} hint={errors.username ? undefined : 'Used to sign in. Letters, numbers, dot, dash or underscore.'}>{(p) => <UsernameInput {...p} value={form.username} onChange={set('username')} />}</Field>
+          )}
           <Field label="Phone" required error={errors.phone}>{(p) => <Input {...p} type="tel" value={form.phone} onChange={set('phone')} placeholder="07XX XXX XXX" />}</Field>
           <Field label="Role" required error={errors.role} hint={isSelf ? 'You cannot change your own role.' : undefined}>{(p) => <Select {...p} value={form.role} onChange={set('role')} options={ROLE_OPTIONS} disabled={isSelf} />}</Field>
           <Field label="Account status" hint={isSelf ? 'You cannot deactivate your own account.' : undefined}>{(p) => <Select {...p} value={form.status} onChange={set('status')} options={[{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} disabled={isSelf} />}</Field>
+          {!member && (
+            <Field label="Temporary password" required error={errors.password} hint={errors.password ? undefined : 'At least 8 characters with an uppercase letter and a number. Share it with them privately.'} className="sm:col-span-2">
+              {(p) => <Input {...p} type="text" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="e.g. Laundry2026" />}
+            </Field>
+          )}
+        </div>
+        <div className="flex gap-2.5 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+          <KeyRound size={15} className="mt-0.5 shrink-0" aria-hidden />
+          <p>
+            Admins can’t reset someone else’s password from the app (that needs Firebase Cloud Functions on the paid Blaze plan).
+            Each person changes their own password in <strong>Settings</strong>. To lock someone out, set their account to <strong>Inactive</strong>.
+          </p>
         </div>
         <div className="rounded-xl border border-line p-3 text-xs text-muted">
           <p className="mb-1 flex items-center gap-1.5 font-semibold text-ink"><ShieldCheck size={14} className="text-brand" /> Role permissions</p>
@@ -105,7 +139,7 @@ function StaffProfileModal({ open, onClose, memberId }) {
             <Avatar name={s.name} size="xl" />
             <div className="flex-1 space-y-1 text-[13px]">
               <div className="flex flex-wrap gap-2"><RoleBadge role={s.role} />{s.status === 'active' ? <Badge tone="green" dot>Active</Badge> : <Badge tone="slate" dot>Inactive</Badge>}</div>
-              <p className="flex items-center gap-2 text-slate-600"><Mail size={14} /> {s.email}</p>
+              <p className="flex items-center gap-2 text-slate-600"><AtSign size={14} /> {s.username ?? '—'}</p>
               <p className="flex items-center gap-2 text-slate-600"><Phone size={14} /> {s.phone}</p>
               <p className="text-xs text-muted">Joined {formatDate(s.joinedAt)} · Last active {s.lastActiveAt ? timeAgo(s.lastActiveAt) : 'never'}</p>
             </div>
@@ -132,7 +166,7 @@ export default function Staff() {
   const [busy, setBusy] = useState(false)
   const q = useDebounce(query.trim().toLowerCase(), 200)
   const staff = useMemo(() => data ?? [], [data])
-  const filtered = useMemo(() => staff.filter((s) => (role === 'all' || s.role === role) && (!q || s.name.toLowerCase().includes(q) || s.email.includes(q) || s.id.toLowerCase().includes(q))), [staff, role, q])
+  const filtered = useMemo(() => staff.filter((s) => (role === 'all' || s.role === role) && (!q || s.name.toLowerCase().includes(q) || (s.username ?? '').includes(q) || s.id.toLowerCase().includes(q))), [staff, role, q])
   const table = useTable(filtered, { pageSize: 10, initialSort: { key: 'id', dir: 'asc' }, resetKey: `${q}|${role}` })
 
   const toggleStatus = async () => {
@@ -163,7 +197,7 @@ export default function Staff() {
         </div>
       ),
     },
-    { key: 'email', header: 'Email', hideBelow: 'lg', render: (s) => <span className="text-slate-600">{s.email}</span> },
+    { key: 'username', header: 'Username', hideBelow: 'lg', render: (s) => <span className="font-mono text-xs text-slate-600">{s.username ?? '—'}</span> },
     { key: 'phone', header: 'Phone', hideBelow: 'xl', render: (s) => <span className="tabular-nums text-slate-600">{s.phone}</span> },
     { key: 'role', header: 'Role', sortable: true, render: (s) => <RoleBadge role={s.role} /> },
     { key: 'status', header: 'Status', sortable: true, render: (s) => (s.status === 'active' ? <Badge tone="green" dot>Active</Badge> : <Badge tone="slate" dot>Inactive</Badge>) },
@@ -186,7 +220,7 @@ export default function Staff() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Staff Management" description="Team accounts, roles and access." actions={<Button icon={UserPlus} onClick={() => setModal({ kind: 'edit' })}>Add staff member</Button>} />
+      <PageHeader title="Staff Management" description="Team logins, roles and access." actions={<Button icon={UserPlus} onClick={() => setModal({ kind: 'edit' })}>Add staff member</Button>} />
       <section className="stat-strip grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MiniStat label="Team members" value={formatNumber(staff.length)} icon={Users} tone="blue" />
         <MiniStat label="Active accounts" value={formatNumber(staff.filter((s) => s.status === 'active').length)} icon={Power} tone="green" />
@@ -196,7 +230,7 @@ export default function Staff() {
       <Card>
         <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center">
           <Tabs variant="pills" className="w-fit" value={role} onChange={setRole} tabs={[{ value: 'all', label: 'All' }, ...ROLE_OPTIONS.map((r) => ({ value: r.value, label: r.label, count: staff.filter((s) => s.role === r.value).length }))]} />
-          <SearchInput value={query} onChange={setQuery} placeholder="Search by name, email or ID…" className="flex-1" />
+          <SearchInput value={query} onChange={setQuery} placeholder="Search by name, username or ID…" className="flex-1" />
         </div>
         {error && !data ? <ErrorState error={error} onRetry={reload} /> : (
           <DataTable columns={columns} table={table} loading={loading && !data} onRowClick={(s) => setModal({ kind: 'profile', member: s })} getRowLabel={(s) => `View ${s.name}`}
@@ -214,7 +248,7 @@ export default function Staff() {
       <StaffProfileModal open={modal?.kind === 'profile'} memberId={modal?.member?.id} onClose={() => setModal(null)} />
       <ConfirmDialog open={modal?.kind === 'status'} onClose={() => setModal(null)} onConfirm={toggleStatus} loading={busy} tone={modal?.member?.status === 'active' ? 'danger' : 'warning'}
         title={modal?.member?.status === 'active' ? `Deactivate ${modal?.member?.name}?` : `Activate ${modal?.member?.name}?`}
-        message={modal?.member?.status === 'active' ? 'They will be signed out and unable to log in until reactivated. Their order history is kept.' : 'They will be able to sign in again with their existing credentials.'}
+        message={modal?.member?.status === 'active' ? 'They lose access straight away and cannot sign in until reactivated. Their order history is kept.' : 'They will be able to sign in again with their existing username and password.'}
         confirmLabel={modal?.member?.status === 'active' ? 'Deactivate' : 'Activate'} />
     </div>
   )

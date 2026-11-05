@@ -1,25 +1,33 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, CircleAlert, Eye, EyeOff, Lock, Mail } from 'lucide-react'
+import { ArrowRight, CircleAlert, Eye, EyeOff, Lock, User } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { DEMO_ACCOUNTS } from '../services'
+import { useSettings } from '../context/SettingsContext'
 import { LogoMark } from '../components/layout/Logo'
 import Button from '../components/ui/Button'
 import { Checkbox, Field, Input } from '../components/ui/Field'
-import { isValidEmail } from '../utils/validators'
+import { LOGIN_EMAIL_DOMAIN, normalizeUsername } from '../data/constants'
 
+/**
+ * Staff sign in with their username only; the login email
+ * (username@papahilalaundry.com) is filled in automatically.
+ */
 export default function Login() {
   const { login } = useAuth()
+  const settings = useSettings()
   const navigate = useNavigate()
   const location = useLocation()
-  const [form, setForm] = useState({ email: '', password: '', remember: true })
+  const [form, setForm] = useState({ username: '', password: '', remember: true })
   const [errors, setErrors] = useState({})
   const [authError, setAuthError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const businessName = settings?.business?.name || 'Papa Hila Laundry'
 
   const set = (key) => (e) => {
-    const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    let value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    // If someone types the full address, keep only the username part.
+    if (key === 'username') value = value.replace(/@.*$/, '').replace(/\s/g, '')
     setForm((f) => ({ ...f, [key]: value }))
     setErrors((er) => ({ ...er, [key]: undefined }))
     setAuthError('')
@@ -28,26 +36,19 @@ export default function Login() {
   const submit = async (e) => {
     e.preventDefault()
     const v = {}
-    if (!form.email.trim()) v.email = 'Email is required'
-    else if (!isValidEmail(form.email)) v.email = 'Enter a valid email address'
+    if (!normalizeUsername(form.username)) v.username = 'Username is required'
     if (!form.password) v.password = 'Password is required'
     setErrors(v)
     if (Object.keys(v).length) return
     setLoading(true)
     try {
-      await login(form)
+      await login({ username: form.username, password: form.password, remember: form.remember })
       navigate(location.state?.from?.pathname ?? '/dashboard', { replace: true })
     } catch (err) {
       if (err.fields) setErrors(err.fields)
       setAuthError(err.message)
       setLoading(false)
     }
-  }
-
-  const fillDemo = (acc) => {
-    setForm((f) => ({ ...f, email: acc.email, password: acc.password }))
-    setErrors({})
-    setAuthError('')
   }
 
   return (
@@ -59,7 +60,7 @@ export default function Login() {
             <LogoMark size={56} className="rounded-2xl shadow-[0_10px_24px_-10px_rgb(37_99_235/0.6)]" />
             <h1 className="mt-6 text-[28px] font-extrabold leading-tight tracking-tight text-ink">Welcome back</h1>
             <p className="mt-1.5 text-sm text-muted">
-              Sign in to <span className="font-semibold text-ink">Papa Hila Laundry</span> to continue.
+              Sign in to <span className="font-semibold text-ink">{businessName}</span> to continue.
             </p>
           </div>
 
@@ -71,11 +72,25 @@ export default function Login() {
           )}
 
           <form onSubmit={submit} noValidate className="mt-8 space-y-4">
-            <Field label="Email address" error={errors.email}>
+            <Field label="Username" error={errors.username}>
               {(p) => (
-                <div className="group relative">
-                  <Mail size={16} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-brand" aria-hidden />
-                  <Input {...p} type="email" autoComplete="username" placeholder="you@papahila.com" value={form.email} onChange={set('email')} className="h-11 pl-10" />
+                <div className="group relative flex items-stretch">
+                  <User size={16} className="pointer-events-none absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-brand" aria-hidden />
+                  <Input
+                    {...p}
+                    type="text"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder="e.g. grace"
+                    value={form.username}
+                    onChange={set('username')}
+                    className="h-11 min-w-0 flex-1 rounded-r-none pl-10"
+                  />
+                  <span className="flex shrink-0 select-none items-center rounded-r-lg border border-l-0 border-line bg-slate-50 px-2.5 text-[12.5px] font-medium text-slate-500" title="Added automatically">
+                    @{LOGIN_EMAIL_DOMAIN}
+                  </span>
                 </div>
               )}
             </Field>
@@ -104,40 +119,9 @@ export default function Login() {
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-
-          {/* Demo credentials (development only) */}
-          <div className="mt-10">
-            <div className="flex items-center gap-3">
-              <span className="h-px flex-1 bg-line" />
-              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Demo accounts</span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            <ul className="mt-3 -mx-3">
-              {DEMO_ACCOUNTS.map((acc) => {
-                const selected = form.email === acc.email
-                return (
-                  <li key={acc.email}>
-                    <button
-                      type="button"
-                      onClick={() => fillDemo(acc)}
-                      aria-pressed={selected}
-                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] transition-colors ${selected ? 'bg-sky-soft' : 'hover:bg-slate-50 active:bg-slate-100'}`}
-                    >
-                      <span className={`w-16 shrink-0 font-semibold ${selected ? 'text-brand' : 'text-ink'}`}>{acc.role}</span>
-                      <span className="min-w-0 flex-1 truncate text-slate-500">{acc.email}</span>
-                      <span className="shrink-0 font-mono text-xs text-slate-500">{acc.password}</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-            <p className="mt-4 text-center text-[11px] leading-relaxed text-slate-400">
-              Click an account to fill the form. Simulated sign-in for development only — replace with secure backend authentication before production.
-            </p>
-          </div>
         </div>
 
-        <p className="mt-12 text-center text-xs text-slate-400">© {new Date().getFullYear()} Papa Hila Laundry · Kilimani, Nairobi</p>
+        <p className="mt-12 text-center text-xs text-slate-400">© {new Date().getFullYear()} {businessName}</p>
       </main>
     </div>
   )

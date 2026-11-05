@@ -18,7 +18,7 @@ import { LogoMark } from '../components/layout/Logo'
 import { RoleBadge } from '../components/shared/StatusBadges'
 import { DATE_FORMAT_OPTIONS } from '../utils/formatDate'
 import { formatCurrency } from '../utils/formatCurrency'
-import { pricingUnit } from '../data/constants'
+import { LOGIN_EMAIL_DOMAIN } from '../data/constants'
 import { PERMISSIONS } from '../utils/permissions'
 
 function useSectionForm(initial) {
@@ -83,7 +83,7 @@ function ProfileTab() {
     pw.setSaving(true)
     try {
       await staffService.changeOwnPassword(pw.form)
-      toast.success('Password changed (demo)')
+      toast.success('Password changed', { description: 'Use the new password next time you sign in.' })
       pw.setForm({ current: '', next: '', confirm: '' })
     } catch (e) {
       pw.setErrors(e.fields ?? {})
@@ -99,18 +99,18 @@ function ProfileTab() {
           <Avatar name={user.name} size="xl" />
           <div>
             <p className="text-base font-bold text-ink">{user.name}</p>
-            <p className="text-[13px] text-muted">{user.email}</p>
+            <p className="text-[13px] text-muted">Signs in as <span className="font-mono font-semibold text-slate-600">{user.username}</span></p>
             <div className="mt-1.5"><RoleBadge role={user.role} /></div>
           </div>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Full name" required error={s.errors.name}>{(p) => <Input {...p} value={s.form.name} onChange={s.set('name')} />}</Field>
           <Field label="Phone" error={s.errors.phone}>{(p) => <Input {...p} value={s.form.phone} onChange={s.set('phone')} />}</Field>
-          <Field label="Email" hint="Contact an administrator to change your sign-in email.">{(p) => <Input {...p} value={user.email} disabled />}</Field>
+          <Field label="Username" hint={`Usernames can’t be changed. Your login is ${user.username}@${LOGIN_EMAIL_DOMAIN}.`}>{(p) => <Input {...p} value={user.username ?? ''} disabled />}</Field>
           <Field label="Role" hint="Roles can only be changed by an administrator — never by yourself.">{(p) => <Input {...p} value={user.role[0].toUpperCase() + user.role.slice(1)} disabled />}</Field>
         </div>
       </SectionCard>
-      <SectionCard title="Change password" description="Demo only — passwords are stored locally in this prototype." icon={KeyRound} onSave={savePassword} saving={pw.saving}>
+      <SectionCard title="Change password" description="Your sign-in password. You’ll need your current password to set a new one." icon={KeyRound} onSave={savePassword} saving={pw.saving}>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Current password" error={pw.errors.current}>{(p) => <Input {...p} type="password" autoComplete="current-password" value={pw.form.current} onChange={pw.set('current')} />}</Field>
           <Field label="New password" error={pw.errors.next} hint={!pw.errors.next ? '8+ characters, a capital letter and a number' : undefined}>{(p) => <Input {...p} type="password" autoComplete="new-password" value={pw.form.next} onChange={pw.set('next')} />}</Field>
@@ -138,8 +138,10 @@ function BusinessTab() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Business name" required error={b.errors.name}>{(x) => <Input {...x} value={b.form.name} onChange={b.set('name')} />}</Field>
           <Field label="Tagline">{(x) => <Input {...x} value={b.form.tagline} onChange={b.set('tagline')} />}</Field>
-          <Field label="Phone number" required error={b.errors.phone}>{(x) => <Input {...x} value={b.form.phone} onChange={b.set('phone')} />}</Field>
+          <Field label="Phone number" error={b.errors.phone}>{(x) => <Input {...x} value={b.form.phone} onChange={b.set('phone')} />}</Field>
           <Field label="Email" error={b.errors.email}>{(x) => <Input {...x} type="email" value={b.form.email} onChange={b.set('email')} />}</Field>
+          <Field label="Paybill number" optional error={b.errors.paybillNumber} hint="Shown on receipts so clients know where to pay">{(x) => <Input {...x} inputMode="numeric" value={b.form.paybillNumber ?? ''} onChange={b.set('paybillNumber')} placeholder="e.g. 522522" />}</Field>
+          <Field label="M-Pesa number" optional error={b.errors.mpesaNumber} hint="Phone number clients can send money to">{(x) => <Input {...x} type="tel" value={b.form.mpesaNumber ?? ''} onChange={b.set('mpesaNumber')} placeholder="07XX XXX XXX" />}</Field>
           <Field label="Physical address" className="sm:col-span-2">{(x) => <Input {...x} value={b.form.address} onChange={b.set('address')} />}</Field>
           <Field label="Business hours">{(x) => <Input {...x} value={b.form.hours} onChange={b.set('hours')} />}</Field>
           <Field label="KRA PIN">{(x) => <Input {...x} value={b.form.kraPin} onChange={b.set('kraPin')} />}</Field>
@@ -148,6 +150,10 @@ function BusinessTab() {
         </div>
       </SectionCard>
       <SectionCard title="Tax & surcharges" description="Applied to new orders. Existing orders keep their original values." icon={Calculator} onSave={() => saveSection('pricing', p.form, p, 'Pricing settings')} saving={p.saving}>
+        <p className="flex items-start gap-2 rounded-lg bg-sky-soft/60 px-3 py-2 text-xs text-navy-800">
+          <Info size={14} className="mt-px shrink-0 text-brand" />
+          <span>Laundry is charged by weight. The rate per kg (default {formatCurrency(50, { decimals: 0 })}/kg) is set for each service on the <strong>Services</strong> page. Surcharges below are added on top.</span>
+        </p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="Tax label">{(x) => <Input {...x} value={p.form.taxLabel} onChange={p.set('taxLabel')} />}</Field>
           <Field label="Tax rate" error={p.errors.taxRate} hint="Default 0%">{(x) => <Input {...x} type="number" min="0" max="100" suffix="%" value={p.form.taxRate} onChange={p.set('taxRate')} />}</Field>
@@ -168,7 +174,7 @@ function ServicesTab() {
     setSaving(s.id)
     try {
       await catalogService.updateService(s.id, { ...s, price: prices[s.id] ?? s.price })
-      toast.success(`${s.name} price updated`)
+      toast.success(`${s.name} rate updated`)
       setPrices((p) => ({ ...p, [s.id]: undefined }))
       reload({ silent: true })
     } catch (e) {
@@ -179,14 +185,14 @@ function ServicesTab() {
   }
   const toggle = async (s) => {
     try {
-      await catalogService.setServiceActive(s.id, !s.active)
+      await catalogService.setServiceActive(s.id, s.active === false)
       reload({ silent: true })
     } catch (e) {
       toast.error(e.message)
     }
   }
   return (
-    <SectionCard title="Default prices & availability" description="Quick-edit the catalogue. New prices apply to new orders only." icon={Shirt}>
+    <SectionCard title="Rates per kg & availability" description="Quick-edit each service’s rate per kg. New rates apply to new orders only." icon={Shirt}>
       {loading && !data ? <Skeleton className="h-64 w-full" /> : (
         <div className="divide-y divide-line rounded-xl border border-line">
           {data.map((s) => {
@@ -195,11 +201,11 @@ function ServicesTab() {
               <div key={s.id} className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-semibold text-ink">{s.name}</p>
-                  <p className="text-xs text-muted">per {pricingUnit(s.pricingModel)} · currently {formatCurrency(s.price, { decimals: 0 })}</p>
+                  <p className="text-xs text-muted">currently {formatCurrency(s.price, { decimals: 0 })} per kg</p>
                 </div>
-                <Input aria-label={`${s.name} price`} type="number" min="0" prefix="KES" className="sm:w-36" value={prices[s.id] ?? s.price} onChange={(e) => setPrices((p) => ({ ...p, [s.id]: e.target.value }))} />
-                <Button size="sm" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty || prices[s.id] === '' || Number(prices[s.id]) < 0} loading={saving === s.id} onClick={() => save(s)}>Save</Button>
-                <div className="sm:w-32"><Switch checked={s.active} onChange={() => toggle(s)} label={s.active ? 'Active' : 'Inactive'} /></div>
+                <Input aria-label={`${s.name} rate per kg`} type="number" min="1" prefix="KES" suffix="/kg" className="sm:w-36" value={prices[s.id] ?? s.price} onChange={(e) => setPrices((p) => ({ ...p, [s.id]: e.target.value }))} />
+                <Button size="sm" variant={dirty ? 'primary' : 'secondary'} disabled={!dirty || prices[s.id] === '' || !(Number(prices[s.id]) > 0)} loading={saving === s.id} onClick={() => save(s)}>Save</Button>
+                <div className="sm:w-32"><Switch checked={s.active !== false} onChange={() => toggle(s)} label={s.active !== false ? 'Active' : 'Inactive'} /></div>
               </div>
             )
           })}
@@ -226,7 +232,7 @@ function UsersTab() {
             {data.map((s) => (
               <li key={s.id} className="flex items-center gap-3 p-3">
                 <Avatar name={s.name} size="sm" />
-                <div className="min-w-0 flex-1"><p className="truncate text-[13px] font-semibold text-ink">{s.name}</p><p className="truncate text-xs text-muted">{s.email}</p></div>
+                <div className="min-w-0 flex-1"><p className="truncate text-[13px] font-semibold text-ink">{s.name}</p><p className="truncate font-mono text-xs text-muted">{s.username ?? '—'}</p></div>
                 <RoleBadge role={s.role} />
                 {s.status === 'active' ? <Badge tone="green" dot>Active</Badge> : <Badge tone="slate" dot>Inactive</Badge>}
               </li>
@@ -235,7 +241,7 @@ function UsersTab() {
         )}
         <Button variant="secondary" size="sm" to="/staff" iconRight={ArrowRight}>Manage staff & roles</Button>
       </SectionCard>
-      <SectionCard title="Role permissions" description="What each role can access. Enforced in the UI and the (mock) API." icon={ShieldCheck}>
+      <SectionCard title="Role permissions" description="What each role can access. Enforced in the app and by the database security rules." icon={ShieldCheck}>
         <div className="scroll-thin overflow-x-auto rounded-xl border border-line">
           <table className="table-base">
             <thead><tr><th>Capability</th><th className="text-center">Admin</th><th className="text-center">Manager</th><th className="text-center">Staff</th></tr></thead>
@@ -294,17 +300,8 @@ function PreferencesTab() {
 }
 
 function SystemTab() {
-  const settings = useSettings()
   const [confirm, setConfirm] = useState(false)
   const [resetting, setResetting] = useState(false)
-  const update = async (patch) => {
-    try {
-      await settingsService.updateSettings('system', { ...settings.system, ...patch })
-      toast.success('System setting updated')
-    } catch (e) {
-      toast.error(e.message)
-    }
-  }
   const reset = async () => {
     setResetting(true)
     try {
@@ -319,20 +316,17 @@ function SystemTab() {
   }
   return (
     <div className="space-y-6">
-      <SectionCard title="Mock API behaviour" description="Development options for the simulated backend." icon={Server}>
-        <div className="divide-y divide-line">
-          <div className="pb-3"><Switch checked={settings.system.latency !== false} onChange={(v) => update({ latency: v })} label="Simulate network latency" description="Adds a short realistic delay to every request so loading states are visible." /></div>
-          <div className="pt-3"><Switch checked={!!settings.system.simulateErrors} onChange={(v) => update({ simulateErrors: v })} label="Simulate random server errors" description="About 1 in 8 requests will fail — useful for testing error handling." /></div>
-        </div>
-      </SectionCard>
       <Card className="border-red-200">
-        <CardHeader title="Reset demo data" description="Restore all orders, customers, payments and settings to the original sample data." icon={RotateCcw} />
+        <CardHeader title="Reset demo data" description="Replace the business data with a small set of sample data." icon={RotateCcw} />
         <CardBody>
-          <p className="mb-4 text-[13px] text-muted">All changes made in this browser will be permanently lost. You will stay signed in if your account exists in the demo data.</p>
+          <p className="mb-4 text-[13px] text-muted">
+            Deletes every client, order, payment, expense, inventory item, notification and activity record in the database for everyone,
+            then loads about a dozen sample clients and forty orders. Staff accounts, logins and settings are kept.
+          </p>
           <Button variant="danger" icon={RotateCcw} onClick={() => setConfirm(true)}>Reset demo data</Button>
         </CardBody>
       </Card>
-      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={reset} loading={resetting} title="Reset all demo data?" message="Every order, customer, payment, expense, inventory change and setting will be restored to the original sample data. This cannot be undone." confirmLabel="Reset everything" />
+      <ConfirmDialog open={confirm} onClose={() => setConfirm(false)} onConfirm={reset} loading={resetting} title="Replace all business data with demo data?" message="All clients, orders, payments, expenses and inventory will be permanently deleted for every user and replaced with sample data. Staff accounts are kept. This cannot be undone." confirmLabel="Reset everything" />
     </div>
   )
 }
@@ -343,11 +337,11 @@ export default function Settings() {
   const tabs = [
     { value: 'profile', label: 'My profile', icon: User, show: true },
     { value: 'business', label: 'Business profile', icon: Building2, show: can('settings.business') },
-    { value: 'services', label: 'Services & prices', icon: Shirt, show: can('services.manage') },
+    { value: 'services', label: 'Services & rates', icon: Shirt, show: can('services.manage') },
     { value: 'users', label: 'Users & access', icon: ShieldCheck, show: can('settings.users') },
     { value: 'notifications', label: 'Notifications', icon: Bell, show: can('settings.notifications') },
     { value: 'preferences', label: 'Preferences', icon: Palette, show: true },
-    { value: 'system', label: 'System', icon: Server, show: can('settings.system') },
+    { value: 'system', label: 'Demo data', icon: Server, show: can('settings.system') },
   ].filter((t) => t.show)
   const requested = params.get('tab')
   const active = tabs.some((t) => t.value === requested) ? requested : tabs.length > 1 && can('settings.business') ? 'business' : 'profile'

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, CircleDollarSign, ClipboardList, Clock, HandCoins, Hourglass, PackageCheck, PackageX, Plus, ReceiptText,
-  Shirt, TrendingUp, TriangleAlert, Truck, WashingMachine, Wallet, Activity, Store, CalendarDays,
+  Scale, TrendingUp, TriangleAlert, Truck, WashingMachine, Wallet, Activity, Store, CalendarDays, Smartphone,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
@@ -22,8 +22,8 @@ import ActivityFeed from '../components/shared/ActivityFeed'
 import { OrderStatusBadge, StockBadge } from '../components/shared/StatusBadges'
 import { STATUS_META } from '../data/statusMeta'
 import OrderTable from '../components/orders/OrderTable'
-import { BarList, DonutChart, Legend, RevenueExpenseChart, VolumeBarChart } from '../components/charts/Charts'
-import { SERIES } from '../components/charts/chartTheme'
+import { DonutChart, Legend, RevenueExpenseChart, VolumeBarChart } from '../components/charts/Charts'
+import { METHOD_COLORS, SERIES } from '../components/charts/chartTheme'
 import { formatCompactCurrency, formatCurrency, formatNumber } from '../utils/formatCurrency'
 import { formatDate, formatTime, greeting, timeAgo } from '../utils/formatDate'
 import { displayPhone } from '../utils/validators'
@@ -34,6 +34,11 @@ const PERIOD_TABS = [
   { value: '12m', label: '12 months' },
 ]
 const WATCH = ['orders', 'payments', 'expenses', 'inventory', 'customers']
+const VOLUME_METRICS = [
+  { value: 'orders', label: 'Orders' },
+  { value: 'kg', label: 'Kg' },
+]
+const formatKg = (v) => `${formatNumber(v, Number.isInteger(v) ? 0 : 1)} kg`
 
 function ChartCard({ title, description, icon, period, onPeriod, children, legend }) {
   return (
@@ -62,7 +67,7 @@ function ScheduleList({ items }) {
               <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${m.cls}`}><m.icon size={16} aria-hidden /></span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-ink">{order.customer.name}</p>
-                <p className="truncate text-xs text-muted">{m.label} · {order.id} · {formatTime(at)}</p>
+                <p className="truncate text-xs text-muted">{m.label} · {order.id} · {order.weightKg} kg · {formatTime(at)}</p>
               </div>
               <OrderStatusBadge status={order.status} size="sm" />
             </Link>
@@ -79,6 +84,7 @@ export default function Dashboard() {
   const [range, setRange] = useState(() => rangeFromPreset('30d'))
   const [revPeriod, setRevPeriod] = useState('30d')
   const [volPeriod, setVolPeriod] = useState('7d')
+  const [volMetric, setVolMetric] = useState('orders')
 
   const dash = useAsync(() => reportService.getDashboard(range), [range.from, range.to], { live: true, watch: WATCH })
   const rev = useAsync(() => reportService.getRevenueAnalytics(revPeriod), [revPeriod], { live: true, watch: WATCH })
@@ -104,7 +110,7 @@ export default function Dashboard() {
         mobileTitle
         description={
           d
-            ? `${format(new Date(), 'EEEE, d MMMM yyyy')} · ${d.overdue.length ? `${d.overdue.length} overdue order${d.overdue.length > 1 ? 's need' : ' needs'} attention, ` : ''}${d.schedule.length} scheduled for today.`
+            ? `${format(new Date(), 'EEEE, d MMMM yyyy')} · ${d.overdueCount ? `${d.overdueCount} overdue order${d.overdueCount > 1 ? 's need' : ' needs'} attention, ` : ''}${d.schedule.length} scheduled for today.`
             : `${format(new Date(), 'EEEE, d MMMM yyyy')} · Here’s what’s happening at Papa Hila today.`
         }
         actions={
@@ -119,27 +125,34 @@ export default function Dashboard() {
         <Card><ErrorState error={dash.error} onRetry={dash.reload} /></Card>
       ) : (
         <>
-          {/* KPI cards */}
-          <section aria-label="Key statistics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+          {/* KPI cards: operations (period totals + live counts), then finance */}
+          <section aria-label="Order statistics" className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-5">
             {!s ? (
-              Array.from({ length: finance ? 8 : 4 }).map((_, i) => <StatCardSkeleton key={i} />)
+              Array.from({ length: 5 }).map((_, i) => <StatCardSkeleton key={i} />)
             ) : (
               <>
                 <StatCard label="Total Orders" value={formatNumber(s.totalOrders.value)} icon={ClipboardList} tone="blue" change={s.totalOrders.change} trend={s.totalOrders.trend} hint={`vs previous ${rangeLabel.replace('last ', '')}`} />
-                <StatCard label="Pending Orders" value={formatNumber(s.pending.value)} icon={Hourglass} tone="amber" change={s.pending.change} inverse trend={s.pending.trend} hint="Received, not started" />
-                <StatCard label="In Progress" value={formatNumber(s.inProgress.value)} icon={WashingMachine} tone="violet" change={s.inProgress.change} trend={s.inProgress.trend} hint="Washing · drying · ironing" />
-                <StatCard label="Completed" value={formatNumber(s.completed.value)} icon={PackageCheck} tone="green" change={s.completed.change} trend={s.completed.trend} hint="Ready or delivered" />
-                {finance && (
-                  <>
-                    <StatCard label="Total Revenue" value={formatCurrency(s.revenue.value, { decimals: 0 })} icon={Wallet} tone="navy" change={s.revenue.change} trend={s.revenue.trend} hint="Payments received" />
-                    <StatCard label="Outstanding Payments" value={formatCurrency(s.outstanding.value, { decimals: 0 })} icon={HandCoins} tone="red" change={s.outstanding.change} inverse trend={s.outstanding.trend} hint="Unpaid on these orders" />
-                    <StatCard label="Total Expenses" value={formatCurrency(s.expenses.value, { decimals: 0 })} icon={ReceiptText} tone="amber" change={s.expenses.change} inverse trend={s.expenses.trend} hint="Recorded expenses" />
-                    <StatCard label="Net Profit" value={formatCurrency(s.netProfit.value, { decimals: 0 })} icon={TrendingUp} tone={s.netProfit.value >= 0 ? 'green' : 'red'} change={s.netProfit.change} trend={s.netProfit.trend} hint="Revenue − expenses" />
-                  </>
-                )}
+                <StatCard label="Laundry Processed" value={formatKg(s.kg.value)} icon={Scale} tone="cyan" change={s.kg.change} trend={s.kg.trend} hint={`Weighed in · ${rangeLabel}`} />
+                <StatCard label="Pending Orders" value={formatNumber(s.pending.value)} icon={Hourglass} tone="amber" hint="Received, not started · now" />
+                <StatCard label="In Progress" value={formatNumber(s.inProgress.value)} icon={WashingMachine} tone="violet" hint="Washing · drying · ironing · now" />
+                <StatCard label="Ready for Collection" value={formatNumber(s.ready.value)} icon={PackageCheck} tone="green" hint="Waiting for the client · now" />
               </>
             )}
           </section>
+          {finance && (
+            <section aria-label="Financial statistics" className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+              {!s ? (
+                Array.from({ length: 4 }).map((_, i) => <StatCardSkeleton key={i} />)
+              ) : (
+                <>
+                  <StatCard label="Total Revenue" value={formatCurrency(s.revenue.value, { decimals: 0 })} icon={Wallet} tone="navy" change={s.revenue.change} trend={s.revenue.trend} hint="Payments received" />
+                  <StatCard label="Outstanding Payments" value={formatCurrency(s.outstanding.value, { decimals: 0 })} icon={HandCoins} tone="red" hint="Unpaid balances · now" />
+                  <StatCard label="Total Expenses" value={formatCurrency(s.expenses.value, { decimals: 0 })} icon={ReceiptText} tone="amber" change={s.expenses.change} inverse trend={s.expenses.trend} hint="Recorded expenses" />
+                  <StatCard label="Net Profit" value={formatCurrency(s.netProfit.value, { decimals: 0 })} icon={TrendingUp} tone={s.netProfit.value >= 0 ? 'green' : 'red'} change={s.netProfit.change} trend={s.netProfit.trend} hint="Revenue − expenses" />
+                </>
+              )}
+            </section>
+          )}
 
           {/* Charts */}
           <section className="grid gap-6 xl:grid-cols-3">
@@ -163,13 +176,13 @@ export default function Dashboard() {
                   {rev.loading && !rev.data ? <Skeleton className="h-[300px] w-full" /> : <RevenueExpenseChart data={rev.data ?? []} />}
                 </ChartCard>
               ) : (
-                <ChartCard title="Orders overview" description="Orders received over time" icon={ClipboardList} period={volPeriod} onPeriod={setVolPeriod}>
-                  {vol.loading && !vol.data ? <Skeleton className="h-[300px] w-full" /> : <VolumeBarChart data={vol.data ?? []} height={300} />}
+                <ChartCard title="Orders overview" description="Orders and kilograms received over time" icon={ClipboardList} period={volPeriod} onPeriod={setVolPeriod} legend={<Tabs variant="pills" tabs={VOLUME_METRICS} value={volMetric} onChange={setVolMetric} ariaLabel="Chart measure" />}>
+                  {vol.loading && !vol.data ? <Skeleton className="h-[300px] w-full" /> : <VolumeBarChart data={vol.data ?? []} height={300} dataKey={volMetric} name={volMetric === 'kg' ? 'Laundry (kg)' : 'Orders'} unit={volMetric === 'kg' ? 'kg' : ''} color={SERIES[volMetric].color} />}
                 </ChartCard>
               )}
             </div>
             <Card>
-              <CardHeader title="Order status" description={`Orders received · ${rangeLabel}`} icon={Activity} />
+              <CardHeader title="Order status" description="Current orders at each stage" icon={Activity} />
               <CardBody>
                 {!d ? (
                   <Skeleton className="h-[220px] w-full" />
@@ -180,31 +193,35 @@ export default function Dashboard() {
             </Card>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-3">
-            {finance && (
+          {finance ? (
+            <section className="grid gap-6 xl:grid-cols-3">
               <div className="xl:col-span-2">
-                <ChartCard title="Orders overview" description="Number of orders received" icon={ClipboardList} period={volPeriod} onPeriod={setVolPeriod}>
-                  {vol.loading && !vol.data ? <Skeleton className="h-[260px] w-full" /> : <VolumeBarChart data={vol.data ?? []} />}
+                <ChartCard title="Orders overview" description="Orders and kilograms received" icon={ClipboardList} period={volPeriod} onPeriod={setVolPeriod} legend={<Tabs variant="pills" tabs={VOLUME_METRICS} value={volMetric} onChange={setVolMetric} ariaLabel="Chart measure" />}>
+                  {vol.loading && !vol.data ? <Skeleton className="h-[260px] w-full" /> : <VolumeBarChart data={vol.data ?? []} height={260} dataKey={volMetric} name={volMetric === 'kg' ? 'Laundry (kg)' : 'Orders'} unit={volMetric === 'kg' ? 'kg' : ''} color={SERIES[volMetric].color} />}
                 </ChartCard>
               </div>
-            )}
-            <Card className={finance ? '' : 'xl:col-span-1'}>
-              <CardHeader title="Popular services" description={`By garments processed · ${rangeLabel}`} icon={Shirt} />
-              <CardBody>
-                {!d ? (
-                  <div className="space-y-4">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}</div>
-                ) : (
-                  <BarList rows={d.popularServices.map((x) => ({ label: x.name, value: x.garments, sub: finance ? formatCompactCurrency(x.revenue) : undefined }))} format={(v) => `${formatNumber(v)} items`} />
-                )}
-              </CardBody>
-            </Card>
-            {!finance && (
-              <Card className="xl:col-span-2">
-                <CardHeader title="Today’s schedule" description="Pickups, deliveries and collections due today" icon={CalendarDays} />
-                <CardBody>{!d ? <Skeleton className="h-40 w-full" /> : <ScheduleList items={d.schedule} />}</CardBody>
+              <Card>
+                <CardHeader title="Payment modes" description={`Money received · ${rangeLabel}`} icon={Smartphone} />
+                <CardBody>
+                  {!d ? (
+                    <Skeleton className="h-[220px] w-full" />
+                  ) : (
+                    <DonutChart
+                      data={d.paymentMethods.map((m) => ({ label: m.label, count: m.amount, color: METHOD_COLORS[m.method] ?? '#94a3b8' }))}
+                      centerLabel="received"
+                      height={170}
+                      valueFormatter={(v) => formatCompactCurrency(v)}
+                    />
+                  )}
+                </CardBody>
               </Card>
-            )}
-          </section>
+            </section>
+          ) : (
+            <Card>
+              <CardHeader title="Today’s schedule" description="Pickups, deliveries and collections due today" icon={CalendarDays} />
+              <CardBody>{!d ? <Skeleton className="h-40 w-full" /> : <ScheduleList items={d.schedule} />}</CardBody>
+            </Card>
+          )}
 
           {/* Recent orders */}
           <Card>
@@ -232,7 +249,7 @@ export default function Dashboard() {
                 title="Overdue orders"
                 description="Past their expected completion time"
                 icon={TriangleAlert}
-                action={d?.overdue.length > 0 && <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600">{d.overdue.length}</span>}
+                action={d?.overdueCount > 0 && <Link to="/orders?overdue=1" className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-red-600 hover:bg-red-100" aria-label={`View all ${d.overdueCount} overdue orders`}>{d.overdueCount}</Link>}
               />
               <CardBody>
                 {!d ? (
@@ -247,13 +264,16 @@ export default function Dashboard() {
                           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600"><TriangleAlert size={16} aria-hidden /></span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[13px] font-semibold text-ink">{o.id} · {o.customer.name}</p>
-                            <p className="truncate text-xs text-red-600">Due {timeAgo(o.dueAt)} · {o.assignedName}</p>
+                            <p className="truncate text-xs text-red-600">Due {timeAgo(o.dueAt)} · {o.weightKg} kg · {o.assignedName}</p>
                           </div>
                           <OrderStatusBadge status={o.status} size="sm" />
                         </Link>
                       </li>
                     ))}
                   </ul>
+                )}
+                {d?.overdueCount > 6 && (
+                  <Button to="/orders?overdue=1" variant="ghost" size="sm" iconRight={ArrowRight} className="mt-2 w-full">View all {d.overdueCount} overdue orders</Button>
                 )}
               </CardBody>
             </Card>
@@ -283,7 +303,7 @@ export default function Dashboard() {
                               <Avatar name={r.customer.name} size="sm" />
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-[13px] font-semibold text-ink">{r.customer.name}</p>
-                                <p className="truncate text-xs text-muted">{displayPhone(r.customer.phone)} · {r.orders} order{r.orders > 1 ? 's' : ''} · since {formatDate(r.oldest)}</p>
+                                <p className="truncate text-xs text-muted">{displayPhone(r.customer.phone)} · {r.orders} order{r.orders === 1 ? '' : 's'}{r.oldest ? ` · last visit ${formatDate(r.oldest)}` : ''}</p>
                               </div>
                               <span className="text-[13px] font-bold tabular-nums text-red-600">{formatCurrency(r.amount, { decimals: 0 })}</span>
                             </Link>

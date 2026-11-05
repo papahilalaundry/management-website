@@ -4,9 +4,9 @@
  */
 import { format } from 'date-fns'
 import { formatCurrency } from './formatCurrency'
-import { formatDateTime } from './formatDate'
+import { formatDate, formatDateTime } from './formatDate'
 import { displayPhone } from './validators'
-import { methodLabel, pricingUnit } from '../data/constants'
+import { isMpesaMethod, methodLabel } from '../data/constants'
 
 const NAVY = [20, 43, 74]
 const BLUE = [37, 99, 235]
@@ -35,7 +35,7 @@ function brandHeader(doc, business, title, subtitle) {
   doc.text(safe(business.name), 30, 12)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7.5)
-  doc.text(safe(`${business.address}  |  ${business.phone}  |  ${business.email}`), 30, 17.5)
+  doc.text(safe([business.address, business.phone, business.email].filter(Boolean).join('  |  ')), 30, 17.5)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.text(safe(title.toUpperCase()), w - 12, 12, { align: 'right' })
@@ -84,21 +84,38 @@ export async function downloadOrderReceiptPdf(order, business) {
     ['Phone', displayPhone(order.customer.phone)],
     ['Date received', formatDateTime(order.receivedAt)],
     ['Expected completion', formatDateTime(order.dueAt)],
+    ...(order.deliveryAt ? [['Delivery date', formatDateTime(order.deliveryAt)]] : []),
+    ...(order.deliveredAt ? [['Delivered on', formatDateTime(order.deliveredAt)]] : []),
+    ['Service', `${order.serviceName} - ${order.weightKg} kg x ${formatCurrency(order.ratePerKg, { decimals: 0 })}/kg`],
     ...(order.status === 'cancelled' ? [['Status', 'CANCELLED']] : []),
   ])
   autoTable(doc, {
     startY: y + 4,
-    head: [['Item', 'Service', 'Qty', 'Unit price', 'Subtotal']],
-    body: order.items.map((it) => [safe(it.name + (it.instructions ? `\n${it.instructions}` : '')), safe(it.serviceName), `${it.quantity}${it.pricingModel === 'per_kg' ? ' kg' : ''}`, `${formatCurrency(it.unitPrice, { decimals: 0 })}/${pricingUnit(it.pricingModel)}`, formatCurrency(it.quantity * it.unitPrice)]),
+    head: [['Garment', 'Pieces']],
+    body: [
+      ...order.items.map((it) => [safe(it.name + (it.instructions ? `\n${it.instructions}` : '') + (it.condition ? `\nCondition: ${it.condition}` : '')), String(it.quantity)]),
+      ['Total garments', String(order.garmentCount)],
+    ],
     headStyles: { fillColor: NAVY, fontSize: 8 },
     styles: { fontSize: 8, cellPadding: 2 },
-    columnStyles: { 2: { halign: 'center' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+    columnStyles: { 1: { halign: 'right' } },
     margin: { left: 12, right: 12 },
   })
   y = doc.lastAutoTable.finalY + 3
-  const lastMethod = order.payments?.length ? methodLabel(order.payments[order.payments.length - 1].method) : '-'
+  if (order.payments?.length) {
+    autoTable(doc, {
+      startY: y,
+      head: [['Paid on', 'Mode', 'Paid by / M-Pesa code', 'Amount']],
+      body: order.payments.map((p) => [formatDate(p.paidAt), methodLabel(p.method), safe([p.payerName, p.reference].filter(Boolean).join(' | ') || '-'), formatCurrency(p.amount)]),
+      headStyles: { fillColor: [100, 116, 139], fontSize: 7.5 },
+      styles: { fontSize: 7.5, cellPadding: 1.6 },
+      columnStyles: { 3: { halign: 'right' } },
+      margin: { left: 12, right: 12 },
+    })
+    y = doc.lastAutoTable.finalY + 3
+  }
   const totals = [
-    ['Subtotal', formatCurrency(order.subtotal)],
+    [`Laundry (${order.weightKg} kg)`, formatCurrency(order.subtotal)],
     ...(order.surcharge > 0 ? [[`Priority surcharge (${order.surchargeRate}%)`, formatCurrency(order.surcharge)]] : []),
     ...(order.extraCharges > 0 ? [['Delivery / other charges', formatCurrency(order.extraCharges)]] : []),
     ...(order.discount > 0 ? [['Discount', `- ${formatCurrency(order.discount)}`]] : []),
@@ -106,7 +123,6 @@ export async function downloadOrderReceiptPdf(order, business) {
     ['GRAND TOTAL', formatCurrency(order.total)],
     ['Amount paid', formatCurrency(order.amountPaid)],
     ['Balance due', formatCurrency(order.balance)],
-    ['Payment method', lastMethod],
     ['Served by', order.createdByName],
   ]
   const w = doc.internal.pageSize.getWidth()
@@ -126,6 +142,17 @@ export async function downloadOrderReceiptPdf(order, business) {
     },
   })
   y = doc.lastAutoTable.finalY + 8
+  const pay = order.balance > 0 && order.status !== 'cancelled'
+    ? [business.paybillNumber && `Pay via M-Pesa Paybill ${business.paybillNumber}, Account: ${order.id}`, business.mpesaNumber && `Or send money to M-Pesa ${business.mpesaNumber}`].filter(Boolean)
+    : []
+  if (pay.length) {
+    doc.setFontSize(8.5)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(4, 120, 87)
+    pay.forEach((line, i) => doc.text(safe(line), w / 2, y + i * 4.5, { align: 'center' }))
+    doc.setTextColor(23, 32, 51)
+    y += pay.length * 4.5 + 4
+  }
   doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
   doc.text(safe(`Thank you for choosing ${business.name}!`), w / 2, y, { align: 'center' })
@@ -155,16 +182,18 @@ export async function downloadPaymentReceiptPdf(payment, order, business) {
   y = keyValues(doc, autoTable, y + 26, [
     ['Customer', payment.customerName ?? order?.customer?.name],
     ['Order no.', payment.orderId],
-    ['Payment date', formatDateTime(payment.paidAt)],
-    ['Payment method', methodLabel(payment.method)],
-    ['Transaction ref.', payment.reference || '-'],
+    ['Date of payment', formatDateTime(payment.paidAt)],
+    ['Mode of payment', methodLabel(payment.method)],
+    ...(isMpesaMethod(payment.method) ? [['Paid by (M-Pesa name)', payment.payerName || '-'], ['M-Pesa code', payment.reference || '-']] : []),
     ['Received by', payment.recordedByName],
+    ...(payment.expectedAmount != null ? [['Estimated amount', formatCurrency(payment.expectedAmount)]] : []),
+    ['Amount paid', formatCurrency(payment.amount)],
     ['Previous balance', formatCurrency(payment.previousBalance)],
-    ['Remaining balance', formatCurrency(payment.balanceAfter)],
+    ['Balance after this payment', formatCurrency(payment.balanceAfter)],
   ])
   doc.setFontSize(7.5)
   doc.setTextColor(...MUTED)
-  if (payment.method === 'mpesa') doc.text('M-Pesa payment recorded manually (simulated). No live M-Pesa transaction was processed.', w / 2, y + 8, { align: 'center' })
+  if (isMpesaMethod(payment.method)) doc.text('M-Pesa payment recorded by staff from the M-Pesa message.', w / 2, y + 8, { align: 'center' })
   doc.text(doc.splitTextToSize(safe(business.receiptFooter), w - 30), w / 2, y + 14, { align: 'center' })
   footer(doc, `${business.name} | Generated ${format(new Date(), 'dd MMM yyyy, HH:mm')}`)
   doc.save(`Payment-${payment.id}.pdf`)

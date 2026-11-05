@@ -15,12 +15,12 @@ import { printNode } from '../../utils/print'
 
 /**
  * type: 'order' | 'payment'
- * orderId: required for order receipts (fresh data is fetched)
+ * orderId (or order): required for order receipts (fresh data is fetched)
  * payment: required for payment receipts
  */
-export default function ReceiptModal({ open, onClose, type = 'order', orderId, payment }) {
+export default function ReceiptModal({ open, onClose, type = 'order', orderId, order: orderProp, payment }) {
   const { business } = useSettings()
-  const id = orderId ?? payment?.orderId
+  const id = orderId ?? orderProp?.id ?? payment?.orderId
   const { data: order, loading, error, reload } = useAsync(() => (open && id ? orderService.getOrderById(id) : Promise.resolve(null)), [open, id])
   const [downloading, setDownloading] = useState(false)
 

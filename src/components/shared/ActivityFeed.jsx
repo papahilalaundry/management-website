@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Boxes, ClipboardList, Pencil, ReceiptText, Settings, Shirt, UserCog, UserPlus, Wallet, Ban, LogIn, StickyNote, RefreshCw } from 'lucide-react'
+import { Boxes, ClipboardList, Pencil, ReceiptText, Settings, Shirt, UserCog, UserPlus, Wallet, Ban, LogIn, StickyNote, RefreshCw, MessageSquare } from 'lucide-react'
 import { timeAgo, formatDateTime } from '../../utils/formatDate'
 import { Skeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
@@ -19,6 +19,7 @@ const ICONS = {
   service: [Shirt, 'bg-sky-50 text-sky-600'],
   settings: [Settings, 'bg-slate-100 text-slate-600'],
   auth: [LogIn, 'bg-slate-100 text-slate-600'],
+  feedback: [MessageSquare, 'bg-amber-50 text-amber-600'],
 }
 
 function linkFor(a) {

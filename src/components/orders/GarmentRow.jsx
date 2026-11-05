@@ -2,46 +2,17 @@ import { useId } from 'react'
 import { Copy, StickyNote, Trash2 } from 'lucide-react'
 import { Field, Input, Select, Textarea } from '../ui/Field'
 import Tooltip from '../ui/Tooltip'
-import { GARMENT_CATALOG, GARMENT_CATEGORIES, pricingUnit } from '../../data/constants'
-import { formatCurrency } from '../../utils/formatCurrency'
-import { lineTotal } from '../../utils/calculations'
-
-/** Suggested default service per garment (staff can always change it). */
-const DEFAULT_SERVICE = {
-  'Suit (2-piece)': 'SRV-08', 'Suit (3-piece)': 'SRV-08', Duvet: 'SRV-05', 'Duvet cover': 'SRV-02', Blanket: 'SRV-06',
-  Curtain: 'SRV-07', 'Mixed load': 'SRV-09', Jacket: 'SRV-04', Coat: 'SRV-04', Tie: 'SRV-04', Jeans: 'SRV-01', 'T-shirt': 'SRV-01', Towel: 'SRV-01', Sweater: 'SRV-01',
-}
-// eslint-disable-next-line react-refresh/only-export-components
-export function suggestedServiceId(name, services) {
-  const id = DEFAULT_SERVICE[name] ?? 'SRV-02'
-  return services.find((s) => s.id === id && s.active)?.id ?? services.find((s) => s.active)?.id ?? ''
-}
+import { GARMENT_CATALOG, GARMENT_CATEGORIES } from '../../data/constants'
 
 /**
- * One garment line in the order form.
- * errors keys: name, quantity, serviceId, unitPrice
+ * One garment line in the order form. Garments are counted for tracking only —
+ * the order is priced by weight, so there is no price or service per garment.
+ * errors keys: name, quantity
  */
-export default function GarmentRow({ index, item, services, errors = {}, onChange, onRemove, onDuplicate, canRemove }) {
+export default function GarmentRow({ index, item, errors = {}, onChange, onRemove, onDuplicate, canRemove }) {
   const hasError = Object.values(errors).some(Boolean)
   const listId = useId()
-  const service = services.find((s) => s.id === item.serviceId)
-  const unit = pricingUnit(service?.pricingModel ?? item.pricingModel)
   const update = (patch) => onChange({ ...item, ...patch })
-
-  const changeService = (serviceId) => {
-    const s = services.find((x) => x.id === serviceId)
-    update({ serviceId, unitPrice: s ? s.price : item.unitPrice, pricingModel: s?.pricingModel })
-  }
-  const changeName = (name) => {
-    const patch = { name }
-    const known = Object.values(GARMENT_CATALOG).flat().includes(name)
-    if (known && !item.priceTouched) {
-      const sid = suggestedServiceId(name, services)
-      const s = services.find((x) => x.id === sid)
-      if (s) Object.assign(patch, { serviceId: sid, unitPrice: s.price, pricingModel: s.pricingModel })
-    }
-    update(patch)
-  }
 
   return (
     <div className={`rounded-xl border bg-white p-3.5 transition sm:p-4 ${hasError ? 'border-red-200' : 'border-line hover:border-slate-300'}`}>
@@ -66,42 +37,23 @@ export default function GarmentRow({ index, item, services, errors = {}, onChang
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-12">
-        <Field label="Category" className="sm:col-span-4 xl:col-span-3">
+        <Field label="Category" className="sm:col-span-4">
           {(p) => <Select {...p} value={item.category} onChange={(e) => update({ category: e.target.value, name: e.target.value === 'Other' ? '' : item.name })} options={GARMENT_CATEGORIES.map((c) => ({ value: c, label: c }))} />}
         </Field>
-        <Field label="Garment" required error={errors.name} className="sm:col-span-8 xl:col-span-4">
+        <Field label="Garment" required error={errors.name} className="sm:col-span-5">
           {(p) => (
             <>
-              <Input {...p} list={listId} value={item.name} onChange={(e) => changeName(e.target.value)} placeholder={item.category === 'Other' ? 'Describe the item' : 'e.g. Shirt'} autoComplete="off" />
+              <Input {...p} list={listId} value={item.name} onChange={(e) => update({ name: e.target.value })} placeholder={item.category === 'Other' ? 'Describe the item' : 'e.g. Trousers'} autoComplete="off" />
               <datalist id={listId}>
                 {(GARMENT_CATALOG[item.category] ?? []).map((g) => <option key={g} value={g} />)}
               </datalist>
             </>
           )}
         </Field>
-        <Field label="Service" required error={errors.serviceId} className="col-span-2 sm:col-span-12 xl:col-span-5">
-          {(p) => (
-            <Select {...p} value={item.serviceId} onChange={(e) => changeService(e.target.value)} placeholder="Select service">
-              {services.filter((s) => s.active || s.id === item.serviceId).map((s) => (
-                <option key={s.id} value={s.id}>{s.name} — {formatCurrency(s.price, { decimals: 0 })}/{pricingUnit(s.pricingModel)}</option>
-              ))}
-            </Select>
-          )}
+        <Field label="Pieces" required error={errors.quantity} className="col-span-2 sm:col-span-3">
+          {(p) => <Input {...p} type="number" inputMode="numeric" min="1" step="1" value={item.quantity} onChange={(e) => update({ quantity: e.target.value })} />}
         </Field>
-        <Field label={unit === 'kg' ? 'Weight (kg)' : 'Quantity'} required error={errors.quantity} className="sm:col-span-4 xl:col-span-3">
-          {(p) => <Input {...p} type="number" inputMode="decimal" min={unit === 'kg' ? '0.5' : '1'} step={unit === 'kg' ? '0.5' : '1'} value={item.quantity} onChange={(e) => update({ quantity: e.target.value })} />}
-        </Field>
-        <Field label={`Price / ${unit}`} required error={errors.unitPrice} className="sm:col-span-4 xl:col-span-4">
-          {(p) => <Input {...p} type="number" inputMode="decimal" min="0" step="10" prefix="KES" value={item.unitPrice} onChange={(e) => update({ unitPrice: e.target.value, priceTouched: true })} />}
-        </Field>
-        <div className="col-span-2 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 sm:col-span-4 sm:flex-col sm:items-stretch sm:justify-end sm:bg-transparent sm:p-0 xl:col-span-5">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted sm:text-right">Subtotal</p>
-          <p className="whitespace-nowrap text-[15px] font-extrabold tabular-nums text-ink sm:h-10 sm:text-right sm:leading-10">{formatCurrency(lineTotal(item), { decimals: 0 })}</p>
-        </div>
       </div>
-      {service && Number(item.unitPrice) !== service.price && item.unitPrice !== '' && (
-        <p className="mt-2 text-[11.5px] text-amber-700">Custom price — list price is {formatCurrency(service.price, { decimals: 0 })}/{unit}. The agreed price is saved on this order.</p>
-      )}
 
       {item.showNotes && (
         <div className="mt-3 grid animate-fade-in gap-3 sm:grid-cols-2">

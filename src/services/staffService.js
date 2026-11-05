@@ -1,78 +1,102 @@
-import { db } from './storage'
+/**
+ * Staff accounts. Each staff member has a Firebase Auth login
+ * (username@papahilalaundry.com) linked through users/{uid}, which also holds
+ * their role and active flag for the security rules.
+ */
+import { orderBy, query, where } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth'
+import { auth, withSecondaryAuth } from '../firebase'
+import { allocate, col, countOf, db, docRef, fetchAll, transact } from './storage'
 import { request, notFound, validationError, ApiError } from './mockApi'
-import { buildContext, enrichOrder, logActivity, nowIso, pushNotification } from './helpers'
+import { enrichOrder, logActivity, nowIso, pushNotification, staffName, withWriter } from './helpers'
 import { formatId } from '../utils/generateIds'
-import { displayPhone, isValidKenyanPhone, toLocalPhone, validateStaff } from '../utils/validators'
+import { displayPhone, isValidKenyanPhone, toLocalPhone, validatePassword, validateStaff } from '../utils/validators'
+import { normalizeUsername, usernameToEmail } from '../data/constants'
 
-/** Never send passwords to the UI. */
-const publicStaff = ({ password, ...rest }) => rest // eslint-disable-line no-unused-vars
-
-function ordersHandled(staffId, orders) {
-  return orders.filter((o) => o.assignedTo === staffId || o.createdBy === staffId).length
-}
+const ordersHandled = (staffId) => countOf(query(col('orders'), where('assignedTo', '==', staffId)))
 
 export const staffService = {
   /** Basic list of active staff for pickers (assignment). Available to all roles. */
   getAssignableStaff() {
-    return request(() => db.get('staff').filter((s) => s.status === 'active').map(({ id, name, role, title }) => ({ id, name, role, title })), { latency: [80, 160] })
+    return request(async () => db.get('staff').filter((s) => s.status === 'active').map(({ id, name, role, title }) => ({ id, name, role, title })))
   },
 
   getStaff() {
-    return request(() => {
-      const orders = db.get('orders')
-      return db.get('staff').map((s) => ({ ...publicStaff(s), ordersHandled: ordersHandled(s.id, orders) }))
-    }, { permission: 'staff.view' })
+    return request(async () => Promise.all(db.get('staff').map(async (s) => ({ ...s, ordersHandled: await ordersHandled(s.id) }))), { permission: 'staff.view' })
   },
 
   getStaffById(id) {
-    return request(() => {
+    return request(async () => {
       const staff = db.get('staff').find((s) => s.id === id)
       if (!staff) throw notFound('Staff member')
-      const ctx = buildContext()
-      const orders = db.get('orders')
-      const assigned = orders.filter((o) => o.assignedTo === id).map((o) => enrichOrder(o, ctx)).sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
+      const [assigned, total, openAssigned, paymentsRecorded, activities] = await Promise.all([
+        fetchAll(query(col('orders'), where('assignedTo', '==', id), orderBy('receivedAt', 'desc')), 25),
+        ordersHandled(id),
+        countOf(query(col('orders'), where('assignedTo', '==', id), where('isOpen', '==', true))),
+        countOf(query(col('payments'), where('recordedBy', '==', id))),
+        fetchAll(query(col('activities'), where('by', '==', id), orderBy('at', 'desc')), 30),
+      ])
+      const now = new Date()
       return {
-        ...publicStaff(staff),
-        ordersHandled: ordersHandled(id, orders),
-        assignedOrders: assigned.slice(0, 25),
-        openAssigned: assigned.filter((o) => ['received', 'washing', 'drying', 'ironing'].includes(o.status)).length,
-        paymentsRecorded: db.get('payments').filter((p) => p.recordedBy === id).length,
-        activities: db.get('activities').filter((a) => a.by === id).slice(0, 30),
+        ...staff,
+        ordersHandled: total,
+        assignedOrders: assigned.map((o) => enrichOrder(o, now)),
+        openAssigned,
+        paymentsRecorded,
+        activities: activities.map((a) => ({ ...a, byName: staffName(a.by) })),
       }
     }, { permission: 'staff.view' })
   },
 
+  /** data: { name, username, password, phone, role, title, status } */
   createStaff(data) {
-    return request((user) => {
-      const errors = validateStaff(data)
-      if (db.get('staff').some((s) => s.email.toLowerCase() === data.email?.trim().toLowerCase())) errors.email = 'This email is already in use'
+    return request(async (user) => {
+      const errors = validateStaff(data, { creating: true })
+      const username = normalizeUsername(data.username)
+      if (!errors.username && db.get('staff').some((s) => s.username === username)) errors.username = 'This username is already taken'
       if (Object.keys(errors).length) throw validationError(errors)
-      const member = {
-        id: formatId('STF', db.nextCounter('staff'), 3),
-        name: data.name.trim(),
-        email: data.email.trim().toLowerCase(),
-        phone: displayPhone(toLocalPhone(data.phone)),
-        role: data.role,
-        title: data.title?.trim() ?? '',
-        status: data.status ?? 'active',
-        password: 'Welcome123!', // DEMO default password
-        joinedAt: nowIso(),
-        lastActiveAt: null,
+
+      let uid
+      try {
+        uid = await withSecondaryAuth(async (a) => (await createUserWithEmailAndPassword(a, usernameToEmail(username), data.password)).user.uid)
+      } catch (err) {
+        if (err.code === 'auth/email-already-in-use') throw validationError({ username: 'This username is already taken' })
+        if (err.code === 'auth/weak-password') throw validationError({ password: 'Choose a stronger password' })
+        throw err
       }
-      db.update('staff', (list) => [...list, member])
-      logActivity('staff', `added ${member.role} account for ${member.name}`, user)
-      pushNotification('staff', 'New staff account', `${member.name} was added as ${member.role} by ${user.name}.`, '/staff')
-      return publicStaff(member)
+
+      return transact(async (tx) => {
+        const { ids, commit } = await allocate(tx, { staff: 1 })
+        const member = {
+          id: formatId('STF', ids.staff, 3),
+          uid,
+          username,
+          email: usernameToEmail(username),
+          name: data.name.trim(),
+          phone: displayPhone(toLocalPhone(data.phone)),
+          role: data.role,
+          title: data.title?.trim() ?? '',
+          status: data.status ?? 'active',
+          joinedAt: nowIso(),
+          lastActiveAt: null,
+        }
+        commit()
+        tx.set(docRef('staff', member.id), member)
+        tx.set(docRef('users', uid), { staffId: member.id, username, role: member.role, active: member.status === 'active' })
+        logActivity(tx, 'staff', `added ${member.role} account for ${member.name} (${username})`, user)
+        pushNotification(tx, 'staff', 'New staff account', `${member.name} was added as ${member.role} by ${user.name}.`, '/staff')
+        return member
+      })
     }, { permission: 'staff.manage' })
   },
 
+  /** Updates profile, role and status (username and password are not changed here). */
   updateStaff(id, data) {
-    return request((user) => {
+    return request(async (user) => {
       const list = db.get('staff')
       const existing = list.find((s) => s.id === id)
       if (!existing) throw notFound('Staff member')
       const errors = validateStaff(data)
-      if (list.some((s) => s.id !== id && s.email.toLowerCase() === data.email?.trim().toLowerCase())) errors.email = 'This email is already in use'
       if (Object.keys(errors).length) throw validationError(errors)
 
       // Guard rails: nobody can change their own role or deactivate themselves,
@@ -83,12 +107,15 @@ export const staffService = {
       if (existing.role === 'admin' && existing.status === 'active' && (data.role !== 'admin' || data.status === 'inactive') && activeAdmins.length <= 1)
         throw new ApiError('At least one active administrator is required.', { status: 409 })
 
-      const updated = { ...existing, name: data.name.trim(), email: data.email.trim().toLowerCase(), phone: displayPhone(toLocalPhone(data.phone)), role: data.role, title: data.title?.trim() ?? '', status: data.status }
-      db.update('staff', (l) => l.map((s) => (s.id === id ? updated : s)))
-      if (existing.role !== updated.role) logActivity('staff', `changed ${updated.name}'s role from ${existing.role} to ${updated.role}`, user)
-      else if (existing.status !== updated.status) logActivity('staff', `${updated.status === 'active' ? 'activated' : 'deactivated'} ${updated.name}`, user)
-      else logActivity('staff', `updated ${updated.name}'s profile`, user)
-      return publicStaff(updated)
+      const updated = { ...existing, name: data.name.trim(), phone: displayPhone(toLocalPhone(data.phone)), role: data.role, title: data.title?.trim() ?? '', status: data.status }
+      await withWriter(null, (b) => {
+        b.set(docRef('staff', id), updated)
+        if (existing.uid) b.set(docRef('users', existing.uid), { staffId: id, username: existing.username, role: updated.role, active: updated.status === 'active' })
+        if (existing.role !== updated.role) logActivity(b, 'staff', `changed ${updated.name}'s role from ${existing.role} to ${updated.role}`, user)
+        else if (existing.status !== updated.status) logActivity(b, 'staff', `${updated.status === 'active' ? 'activated' : 'deactivated'} ${updated.name}`, user)
+        else logActivity(b, 'staff', `updated ${updated.name}'s profile`, user)
+      })
+      return updated
     }, { permission: 'staff.manage' })
   },
 
@@ -100,27 +127,38 @@ export const staffService = {
 
   /** Any signed-in user can update their own name/phone (never their role). */
   updateOwnProfile(data) {
-    return request((user) => {
+    return request(async (user) => {
       const errors = {}
       if (!data.name?.trim()) errors.name = 'Name is required'
       if (data.phone && !isValidKenyanPhone(data.phone)) errors.phone = 'Enter a valid Kenyan number'
       if (Object.keys(errors).length) throw validationError(errors)
-      const updated = { ...db.get('staff').find((s) => s.id === user.id), name: data.name.trim(), phone: data.phone ? displayPhone(toLocalPhone(data.phone)) : '' }
-      db.update('staff', (l) => l.map((s) => (s.id === user.id ? updated : s)))
-      logActivity('staff', 'updated their profile', user)
-      return publicStaff(updated)
+      const patch = { name: data.name.trim(), phone: data.phone ? displayPhone(toLocalPhone(data.phone)) : '', updatedAt: nowIso() }
+      await withWriter(null, (b) => {
+        b.update(docRef('staff', user.id), patch)
+        logActivity(b, 'staff', 'updated their profile', user)
+      })
+      return { ...user, ...patch }
     })
   },
 
+  /** Changes the signed-in user's Firebase Auth password. */
   changeOwnPassword({ current, next }) {
-    return request((user) => {
-      const me = db.get('staff').find((s) => s.id === user.id)
+    return request(async () => {
       const errors = {}
-      if (me.password !== current) errors.current = 'Current password is incorrect'
-      if (!next || next.length < 8) errors.next = 'Use at least 8 characters'
-      else if (!/[A-Z]/.test(next) || !/\d/.test(next)) errors.next = 'Include an uppercase letter and a number'
+      if (!current) errors.current = 'Enter your current password'
+      const pw = validatePassword(next)
+      if (pw) errors.next = pw
       if (Object.keys(errors).length) throw validationError(errors)
-      db.update('staff', (l) => l.map((s) => (s.id === user.id ? { ...s, password: next } : s)))
+      const me = auth.currentUser
+      if (!me) throw new ApiError('Your session has expired. Please sign in again.', { status: 401 })
+      try {
+        await reauthenticateWithCredential(me, EmailAuthProvider.credential(me.email, current))
+      } catch (err) {
+        if (['auth/invalid-credential', 'auth/wrong-password'].includes(err.code)) throw validationError({ current: 'Current password is incorrect' })
+        if (err.code === 'auth/too-many-requests') throw new ApiError('Too many attempts. Wait a few minutes and try again.', { status: 429 })
+        throw err
+      }
+      await updatePassword(me, next)
       return { ok: true }
     })
   },

@@ -13,7 +13,7 @@ import { formatCompactCurrency, formatCurrency, formatNumber } from '../../utils
 const AXIS = { fontSize: 11, fill: '#64748b' }
 const GRID = '#eef1f6'
 
-function TooltipCard({ active, payload, label, money, labelKey }) {
+function TooltipCard({ active, payload, label, money, labelKey, unit = '' }) {
   if (!active || !payload?.length) return null
   const title = labelKey ? payload[0]?.payload?.[labelKey] : label
   return (
@@ -26,7 +26,7 @@ function TooltipCard({ active, payload, label, money, labelKey }) {
               <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.payload?.fill }} aria-hidden />
               {p.name}
             </span>
-            <span className="font-semibold tabular-nums text-ink">{money ? formatCurrency(p.value, { decimals: 0 }) : formatNumber(p.value)}</span>
+            <span className="font-semibold tabular-nums text-ink">{money ? formatCurrency(p.value, { decimals: 0 }) : `${formatNumber(p.value, unit && !Number.isInteger(p.value) ? 1 : 0)}${unit ? ` ${unit}` : ''}`}</span>
           </div>
         ))}
       </div>
@@ -78,16 +78,16 @@ export function RevenueExpenseChart({ data, height = 300, xKey = 'short' }) {
   )
 }
 
-/** Single-series bar chart (orders per day/week/month). */
-export function VolumeBarChart({ data, dataKey = 'orders', name = 'Orders', height = 260, xKey = 'short', money = false, color = SERIES.orders.color }) {
+/** Single-series bar chart (orders or kg per day/week/month). `unit` (e.g. 'kg') allows decimals and labels the tooltip. */
+export function VolumeBarChart({ data, dataKey = 'orders', name = 'Orders', height = 260, xKey = 'short', money = false, color = SERIES.orders.color, unit = '' }) {
   return (
     <div style={{ height }} role="img" aria-label={`Bar chart of ${name.toLowerCase()} over time`}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 10, right: 4, left: -8, bottom: 0 }} barCategoryGap="22%">
           <CartesianGrid stroke={GRID} vertical={false} />
           <XAxis dataKey={xKey} tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} interval="preserveStartEnd" minTickGap={10} />
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={false} width={money ? 76 : 36} tickFormatter={money ? (v) => formatCompactCurrency(v) : undefined} />
-          <Tooltip content={<TooltipCard money={money} labelKey="label" />} cursor={{ fill: '#f1f5f9' }} />
+          <YAxis tick={AXIS} tickLine={false} axisLine={false} allowDecimals={!!unit} width={money ? 76 : 40} tickFormatter={money ? (v) => formatCompactCurrency(v) : undefined} />
+          <Tooltip content={<TooltipCard money={money} labelKey="label" unit={unit} />} cursor={{ fill: '#f1f5f9' }} />
           <Bar dataKey={dataKey} name={name} fill={color} radius={[4, 4, 0, 0]} maxBarSize={36} animationDuration={700} animationEasing="ease-out" />
         </BarChart>
       </ResponsiveContainer>

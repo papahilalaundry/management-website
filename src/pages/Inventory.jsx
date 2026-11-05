@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { inventoryService } from '../services'
 import { useAsync } from '../hooks/useAsync'
 import { useTable } from '../hooks/useTable'
+import { usePagedQuery } from '../hooks/usePagedQuery'
 import { useDebounce } from '../hooks/useDebounce'
 import PageHeader from '../components/layout/PageHeader'
 import Button from '../components/ui/Button'
@@ -13,6 +14,7 @@ import Modal, { ConfirmDialog } from '../components/ui/Modal'
 import { Field, Input, Select, Textarea } from '../components/ui/Field'
 import SearchInput from '../components/ui/SearchInput'
 import DataTable from '../components/ui/DataTable'
+import Pagination from '../components/ui/Pagination'
 import Dropdown from '../components/ui/Dropdown'
 import Tabs from '../components/ui/Tabs'
 import EmptyState, { ErrorState } from '../components/ui/EmptyState'
@@ -139,10 +141,16 @@ function MovementModal({ open, onClose, item, type, onSaved }) {
 }
 
 function HistoryModal({ open, onClose, item }) {
-  const { data, loading } = useAsync(() => (open && item ? inventoryService.getStockMovements(item.id) : Promise.resolve([])), [open, item?.id])
+  // One page of movements at a time, newest first.
+  const page = usePagedQuery(
+    ({ pageSize, cursor }) => (open && item ? inventoryService.getStockMovements(item.id, { pageSize, cursor }) : Promise.resolve({ rows: [], cursor: null, hasMore: false })),
+    { key: `${open}|${item?.id ?? ''}`, pageSize: 10, watch: ['stockMovements'] },
+  )
+  const data = page.pageRows
   return (
     <Modal open={open} onClose={onClose} size="lg" icon={History} title="Stock movement history" description={item?.name} footer={<Button onClick={onClose}>Close</Button>}>
-      {loading ? <Skeleton className="h-48 w-full" /> : !data?.length ? <EmptyState compact title="No stock movements yet" /> : (
+      {page.error ? <ErrorState error={page.error} onRetry={page.reload} /> : page.loading && !data.length ? <Skeleton className="h-48 w-full" /> : !data.length ? <EmptyState compact title="No stock movements yet" /> : (
+        <>
         <ul className="divide-y divide-line">
           {data.map((m) => {
             const meta = MOVE_META[m.type]
@@ -161,6 +169,12 @@ function HistoryModal({ open, onClose, item }) {
             )
           })}
         </ul>
+        {(page.hasMore || page.page > 1) && (
+          <div className="-mx-5 -mb-5 mt-2">
+            <Pagination page={page.page} pageCount={page.pageCount} total={page.total} pageSize={page.pageSize} onPageChange={page.setPage} cursorMode={page.cursorMode} hasMore={page.hasMore} totalKnown={page.totalKnown} />
+          </div>
+        )}
+        </>
       )}
     </Modal>
   )
@@ -169,7 +183,7 @@ function HistoryModal({ open, onClose, item }) {
 export default function Inventory() {
   const [params, setParams] = useSearchParams()
   const { data, loading, error, reload } = useAsync(() => inventoryService.getInventory(), [], { live: true, watch: ['inventory'] })
-  const moves = useAsync(() => inventoryService.getStockMovements(), [], { live: true, watch: ['stockMovements'] })
+  const moves = useAsync(async () => (await inventoryService.getStockMovements(undefined, { pageSize: 8 })).rows, [], { live: true, watch: ['stockMovements'] })
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const [status, setStatus] = useState('all')

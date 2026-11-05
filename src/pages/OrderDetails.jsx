@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight, Ban, CalendarDays, ClipboardList, History, Mail, MapPin, MessageSquareText, MoreHorizontal, Pencil, Phone,
   Printer, RefreshCw, Shirt, StickyNote, Truck, User, UserCog, Wallet, Zap, Clock, PackageCheck, CircleDollarSign, TriangleAlert,
+  Scale, Star, MessageSquareQuote, CheckCheck, WashingMachine,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { notificationService, orderService } from '../services'
@@ -16,11 +17,12 @@ import Dropdown from '../components/ui/Dropdown'
 import Avatar from '../components/ui/Avatar'
 import EmptyState, { ErrorState } from '../components/ui/EmptyState'
 import { PageSkeleton } from '../components/ui/Skeleton'
-import { MethodBadge, OrderStatusBadge, OverdueBadge, PaymentStatusBadge, PriorityBadge } from '../components/shared/StatusBadges'
+import { ClientTypeBadge, MethodBadge, OrderStatusBadge, OverdueBadge, PaymentStatusBadge, PriorityBadge, RatingBadge } from '../components/shared/StatusBadges'
+import { Field, Textarea } from '../components/ui/Field'
 import { STATUS_META } from '../data/statusMeta'
 import OrderProgress from '../components/orders/OrderProgress'
 import { useOrderActions } from '../components/orders/useOrderActions'
-import { ORDER_STAGES, SMS_TEMPLATES, stageIndex, stageLabel, pricingUnit } from '../data/constants'
+import { FEEDBACK_RATINGS, ORDER_STAGES, SMS_TEMPLATES, stageIndex, stageLabel } from '../data/constants'
 import { formatCurrency } from '../utils/formatCurrency'
 import { formatDate, formatDateTime, timeAgo } from '../utils/formatDate'
 import { displayPhone } from '../utils/validators'
@@ -33,6 +35,100 @@ const TIMELINE_ICON = {
   payment: [Wallet, 'bg-emerald-50 text-emerald-600'],
   edited: [Pencil, 'bg-slate-100 text-slate-600'],
   cancelled: [Ban, 'bg-red-50 text-red-600'],
+  feedback: [MessageSquareQuote, 'bg-pink-50 text-pink-600'],
+}
+
+/** Client comments/feedback on the order: shows the saved feedback, or a form to record it. */
+function FeedbackCard({ order, canEdit, onSaved }) {
+  const fb = order.feedback
+  const byName = fb?.byName ?? order.timeline?.find((ev) => ev.type === 'feedback')?.byName
+  const [editing, setEditing] = useState(false)
+  const [rating, setRating] = useState(fb?.rating ?? null)
+  const [comment, setComment] = useState(fb?.comment ?? '')
+  const [errors, setErrors] = useState({})
+  const [saving, setSaving] = useState(false)
+  const showForm = canEdit && (editing || !fb)
+
+  const start = () => {
+    setRating(fb?.rating ?? null)
+    setComment(fb?.comment ?? '')
+    setErrors({})
+    setEditing(true)
+  }
+  const save = async () => {
+    setSaving(true)
+    try {
+      await orderService.saveFeedback(order.id, { rating, comment })
+      toast.success('Client feedback saved')
+      setEditing(false)
+      onSaved?.()
+    } catch (e) {
+      setErrors(e.fields ?? {})
+      toast.error(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        title="Client feedback"
+        description="Comments and rating from the client."
+        icon={MessageSquareQuote}
+        action={fb && canEdit && !editing ? <Button variant="ghost" size="sm" icon={Pencil} onClick={start}>Edit</Button> : null}
+      />
+      <CardBody>
+        {showForm ? (
+          <div className="space-y-3">
+            <fieldset>
+              <legend className="mb-2 text-[13px] font-semibold text-slate-700">Rating <span className="font-normal text-slate-400">(optional)</span></legend>
+              <div role="radiogroup" aria-label="Rating" className="flex flex-wrap gap-1.5">
+                {[...FEEDBACK_RATINGS].reverse().map((r) => {
+                  const selected = rating === r.value
+                  return (
+                    <button
+                      key={r.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      title={r.label}
+                      onClick={() => setRating(selected ? null : r.value)}
+                      className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[13px] font-semibold transition ${selected ? 'border-amber-400 bg-amber-50 text-amber-800 ring-4 ring-amber-400/15' : 'border-line text-slate-600 hover:border-slate-300'}`}
+                    >
+                      <Star size={13} className={selected ? 'fill-amber-400 text-amber-500' : 'text-slate-400'} aria-hidden /> {r.value}
+                    </button>
+                  )
+                })}
+              </div>
+              {rating && <p className="mt-1 text-xs text-muted">{FEEDBACK_RATINGS.find((r) => r.value === rating)?.label}</p>}
+              {errors.rating && <p className="mt-1 text-xs font-medium text-red-600" role="alert">{errors.rating}</p>}
+            </fieldset>
+            <Field label="Client’s comments" error={errors.comment}>
+              {(p) => <Textarea {...p} rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="e.g. Happy with the folding; asked for less starch next time" />}
+            </Field>
+            <div className="flex justify-end gap-2">
+              {fb && <Button variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>}
+              <Button size="sm" onClick={save} loading={saving}>Save feedback</Button>
+            </div>
+          </div>
+        ) : fb ? (
+          <div className="space-y-2">
+            {fb.rating ? (
+              <div className="flex items-center gap-2">
+                <RatingBadge rating={fb.rating} />
+                <span className="text-xs text-muted">{FEEDBACK_RATINGS.find((r) => r.value === fb.rating)?.label}</span>
+              </div>
+            ) : null}
+            {fb.comment && <p className="rounded-lg bg-slate-50 px-3 py-2 text-[13px] italic text-slate-700">“{fb.comment}”</p>}
+            <p className="text-[11.5px] text-muted">Recorded {formatDateTime(fb.at)}{byName ? ` by ${byName}` : ''}</p>
+          </div>
+        ) : (
+          <p className="rounded-lg bg-slate-50 px-3 py-3 text-center text-xs text-muted">No feedback recorded yet.</p>
+        )}
+      </CardBody>
+    </Card>
+  )
 }
 
 function GarmentStatusSelect({ item, disabled, canRevert, onChange }) {
@@ -227,7 +323,7 @@ export default function OrderDetails() {
         <div className="space-y-6 xl:col-span-2">
           {/* Garments */}
           <Card>
-            <CardHeader title="Garments" description={`${order.garmentCount} items across ${order.items.length} lines — track each garment individually.`} icon={Shirt} />
+            <CardHeader title="Garments" description={`${order.garmentCount} pieces across ${order.items.length} lines · ${order.weightKg} kg in total. Garments are counted for tracking; the price is by weight.`} icon={Shirt} />
             {/* Phones: one card per garment line */}
             <ul className="divide-y divide-line border-t border-line md:hidden">
               {order.items.map((it) => (
@@ -235,11 +331,8 @@ export default function OrderDetails() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-semibold text-ink">{it.name} <span className="font-normal text-muted">· {it.category}</span></p>
-                      <p className="mt-0.5 text-[12.5px] text-muted">
-                        {it.serviceName} · {it.quantity}{it.pricingModel === 'per_kg' ? ' kg' : ''} × {formatCurrency(it.unitPrice, { decimals: 0 })}
-                      </p>
                     </div>
-                    <p className="shrink-0 font-bold tabular-nums text-ink">{formatCurrency(it.quantity * it.unitPrice, { decimals: 0 })}</p>
+                    <p className="shrink-0 font-bold tabular-nums text-ink">{it.quantity} pc{it.quantity === 1 ? '' : 's'}</p>
                   </div>
                   {it.instructions && <p className="mt-1.5 flex items-start gap-1 text-[12px] text-blue-700"><StickyNote size={12} className="mt-0.5 shrink-0" /> {it.instructions}</p>}
                   {it.condition && <p className="mt-1 flex items-start gap-1 text-[12px] text-amber-700"><TriangleAlert size={12} className="mt-0.5 shrink-0" /> {it.condition}</p>}
@@ -260,10 +353,7 @@ export default function OrderDetails() {
                 <thead>
                   <tr>
                     <th>Garment</th>
-                    <th>Service</th>
-                    <th className="text-center">Qty</th>
-                    <th className="text-right">Unit price</th>
-                    <th className="text-right">Subtotal</th>
+                    <th className="text-center">Pieces</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -276,10 +366,7 @@ export default function OrderDetails() {
                         {it.instructions && <p className="mt-1 flex max-w-[260px] items-start gap-1 text-[11.5px] text-blue-700"><StickyNote size={12} className="mt-0.5 shrink-0" /> {it.instructions}</p>}
                         {it.condition && <p className="mt-1 flex max-w-[260px] items-start gap-1 text-[11.5px] text-amber-700"><TriangleAlert size={12} className="mt-0.5 shrink-0" /> {it.condition}</p>}
                       </td>
-                      <td className="text-[13px] text-slate-600">{it.serviceName}</td>
-                      <td className="text-center font-semibold tabular-nums">{it.quantity}{it.pricingModel === 'per_kg' ? ' kg' : ''}</td>
-                      <td className="text-right tabular-nums text-slate-600">{formatCurrency(it.unitPrice)}<span className="text-[10.5px] text-slate-400">/{pricingUnit(it.pricingModel)}</span></td>
-                      <td className="text-right font-semibold tabular-nums">{formatCurrency(it.quantity * it.unitPrice)}</td>
+                      <td className="text-center font-semibold tabular-nums">{it.quantity}</td>
                       <td>
                         {canUpdate && it.status !== 'delivered' ? (
                           <span className={busyItem === it.id ? 'pointer-events-none opacity-50' : ''}>
@@ -330,7 +417,10 @@ export default function OrderDetails() {
                 <Avatar name={order.customer.name} size="lg" />
                 <div className="min-w-0">
                   <Link to={`/customers/${order.customer.id}`} className="block truncate text-[15px] font-bold text-ink hover:text-brand">{order.customer.name}</Link>
-                  <p className="font-mono text-xs text-muted">{order.customer.id}</p>
+                  <p className="flex items-center gap-2 font-mono text-xs text-muted">
+                    {order.customer.id}
+                    {order.customer.clientType && <ClientTypeBadge type={order.customer.clientType} size="sm" />}
+                  </p>
                 </div>
               </div>
               <div className="divide-y divide-line">
@@ -346,7 +436,7 @@ export default function OrderDetails() {
             <CardHeader title="Payment summary" icon={CircleDollarSign} action={<PaymentStatusBadge status={order.paymentStatus} />} />
             <CardBody className="space-y-4">
               <div className="space-y-1.5 text-[13px]">
-                <div className="flex justify-between text-slate-600"><span>Subtotal</span><span className="tabular-nums">{formatCurrency(order.subtotal)}</span></div>
+                <div className="flex justify-between text-slate-600"><span>{order.weightKg} kg × {formatCurrency(order.ratePerKg, { decimals: 0 })}/kg</span><span className="tabular-nums">{formatCurrency(order.subtotal)}</span></div>
                 {order.surcharge > 0 && <div className="flex justify-between text-slate-600"><span>Priority surcharge ({order.surchargeRate}%)</span><span className="tabular-nums">{formatCurrency(order.surcharge)}</span></div>}
                 {order.extraCharges > 0 && <div className="flex justify-between text-slate-600"><span>Additional charges</span><span className="tabular-nums">{formatCurrency(order.extraCharges)}</span></div>}
                 {order.discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span className="tabular-nums">− {formatCurrency(order.discount)}</span></div>}
@@ -367,12 +457,27 @@ export default function OrderDetails() {
                 ) : (
                   <ul className="space-y-2">
                     {order.payments.map((p) => (
-                      <li key={p.id} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-bold tabular-nums text-ink">{formatCurrency(p.amount)}</p>
-                          <p className="truncate text-[11px] text-muted">{formatDateTime(p.paidAt)} · {p.recordedByName}{p.reference ? ` · ${p.reference}` : ''}</p>
+                      <li key={p.id} className="rounded-lg border border-line px-3 py-2">
+                        <div className="flex items-center gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[13px] font-bold tabular-nums text-ink">
+                              {formatCurrency(p.amount)}
+                              {p.expectedAmount != null && p.expectedAmount !== p.amount && (
+                                <span className="ml-1.5 text-[11px] font-medium text-muted">of {formatCurrency(p.expectedAmount, { decimals: 0 })} estimated</span>
+                              )}
+                            </p>
+                            <p className="truncate text-[11px] text-muted">Paid {formatDateTime(p.paidAt)}</p>
+                          </div>
+                          <MethodBadge method={p.method} />
                         </div>
-                        <MethodBadge method={p.method} />
+                        {(p.payerName || p.reference) && (
+                          <p className="mt-1 truncate text-[11.5px] text-slate-600">
+                            {p.payerName && <>From <span className="font-semibold">{p.payerName}</span></>}
+                            {p.payerName && p.reference && ' · '}
+                            {p.reference && <span className="font-mono">{p.reference}</span>}
+                          </p>
+                        )}
+                        <p className="mt-0.5 text-[11px] text-slate-400">Recorded by {p.recordedByName} · {p.id}</p>
                       </li>
                     ))}
                   </ul>
@@ -388,16 +493,21 @@ export default function OrderDetails() {
           <Card>
             <CardHeader title="Order details" icon={ClipboardList} />
             <CardBody className="divide-y divide-line pt-0">
+              <InfoRow icon={WashingMachine} label="Service">{order.serviceName} <span className="text-muted">· {formatCurrency(order.ratePerKg, { decimals: 0 })}/kg</span></InfoRow>
+              <InfoRow icon={Scale} label="Weight">{order.weightKg} kg · {order.garmentCount} garment{order.garmentCount === 1 ? '' : 's'}</InfoRow>
               <InfoRow icon={CalendarDays} label="Date received">{formatDateTime(order.receivedAt)}</InfoRow>
               <InfoRow icon={Clock} label="Expected completion"><span className={order.isOverdue ? 'text-red-600' : ''}>{formatDateTime(order.dueAt)}</span></InfoRow>
               {order.pickupAt && <InfoRow icon={PackageCheck} label="Pickup">{formatDateTime(order.pickupAt)}</InfoRow>}
-              {order.deliveryAt && <InfoRow icon={Truck} label="Delivery">{formatDateTime(order.deliveryAt)}</InfoRow>}
+              <InfoRow icon={Truck} label="Delivery date">{order.deliveryAt ? formatDateTime(order.deliveryAt) : <span className="text-slate-400">Not scheduled (client collects)</span>}</InfoRow>
+              {order.deliveredAt && <InfoRow icon={CheckCheck} label="Delivered on">{formatDateTime(order.deliveredAt)}</InfoRow>}
               <InfoRow icon={Zap} label="Priority"><PriorityBadge priority={order.priority} /></InfoRow>
               <InfoRow icon={UserCog} label="Assigned to">{order.assignedName}</InfoRow>
-              {order.notes && <InfoRow icon={StickyNote} label="Notes">{order.notes}</InfoRow>}
+              {order.notes && <InfoRow icon={StickyNote} label="Client’s comments">{order.notes}</InfoRow>}
               <InfoRow icon={History} label="Last updated">{formatDate(order.updatedAt)} ({timeAgo(order.updatedAt)})</InfoRow>
             </CardBody>
           </Card>
+
+          {!cancelled && <FeedbackCard key={order.feedback?.at ?? 'none'} order={order} canEdit={can('orders.edit')} onSaved={() => reload({ silent: true })} />}
         </div>
       </div>
       {actions.modals}

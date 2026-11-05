@@ -4,8 +4,12 @@ import { customerService } from '../../services'
 import { useDebounce } from '../../hooks/useDebounce'
 import Avatar from '../ui/Avatar'
 import { displayPhone } from '../../utils/validators'
+import { ClientTypeBadge } from '../shared/StatusBadges'
 
-/** Search-as-you-type customer selector. Shows a summary card once selected. */
+/**
+ * Search-as-you-type customer selector (customer ID, phone prefix, or the
+ * start of any word of the name). Shows a summary card once selected.
+ */
 export default function CustomerPicker({ value, onChange, onCreateNew, error, autoFocus, disabled }) {
   const [query, setQuery] = useState('')
   const [found, setFound] = useState({ q: '', list: [] })
@@ -45,7 +49,7 @@ export default function CustomerPicker({ value, onChange, onCreateNew, error, au
       <div className="flex items-start gap-3 rounded-xl border border-blue-200 bg-sky-soft/60 p-3.5">
         <Avatar name={value.name} size="md" />
         <div className="min-w-0 flex-1">
-          <p className="font-bold text-ink">{value.name} <span className="ml-1 font-mono text-[11px] font-medium text-muted">{value.id}</span></p>
+          <p className="flex flex-wrap items-center gap-1.5 font-bold text-ink">{value.name} <span className="font-mono text-[11px] font-medium text-muted">{value.id}</span>{value.clientType && <ClientTypeBadge type={value.clientType} size="sm" />}</p>
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
             <span className="flex items-center gap-1"><Phone size={12} aria-hidden /> {displayPhone(value.phone)}</span>
             {value.email && <span className="flex items-center gap-1"><Mail size={12} aria-hidden /> {value.email}</span>}
@@ -96,8 +100,9 @@ export default function CustomerPicker({ value, onChange, onCreateNew, error, au
                   <Avatar name={c.name} size="sm" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-semibold text-ink">{c.name}</span>
-                    <span className="block truncate text-xs text-muted">{displayPhone(c.phone)} · {c.id}</span>
+                    <span className="block truncate text-xs text-muted">{displayPhone(c.phone)} · {c.id}{c.orderCount ? ` · ${c.orderCount} visit${c.orderCount === 1 ? '' : 's'}` : ''}</span>
                   </span>
+                  <ClientTypeBadge type={c.clientType} size="sm" />
                 </button>
               </li>
             ))}
