@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Bell, Building2, Calculator, Check, KeyRound, Palette, RotateCcw, Save, Server, ShieldCheck, Shirt, User, Users, X, ArrowRight, Info } from 'lucide-react'
+import { Bell, Building2, Calculator, Check, KeyRound, LifeBuoy, Map, Palette, RotateCcw, Save, Server, ShieldCheck, Shirt, User, Users, X, ArrowRight, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { catalogService, settingsService, staffService } from '../services'
 import { useAuth } from '../context/AuthContext'
@@ -20,6 +20,7 @@ import { DATE_FORMAT_OPTIONS } from '../utils/formatDate'
 import { formatCurrency } from '../utils/formatCurrency'
 import { unitLabel } from '../data/constants'
 import { PERMISSIONS } from '../utils/permissions'
+import { useTour } from '../components/tour/TourContext'
 
 function useSectionForm(initial) {
   const [form, setForm] = useState(initial)
@@ -64,6 +65,7 @@ function SectionCard({ title, description, icon, children, onSave, saving, readO
 
 function ProfileTab() {
   const { user } = useAuth()
+  const { startMainTour } = useTour()
   const s = useSectionForm({ name: user.name, phone: user.phone ?? '' })
   const pw = useSectionForm({ current: '', next: '', confirm: '' })
   const saveProfile = async () => {
@@ -115,6 +117,12 @@ function ProfileTab() {
           <Field label="Current password" error={pw.errors.current}>{(p) => <Input {...p} type="password" autoComplete="current-password" value={pw.form.current} onChange={pw.set('current')} />}</Field>
           <Field label="New password" error={pw.errors.next} hint={!pw.errors.next ? '8+ characters, a capital letter and a number' : undefined}>{(p) => <Input {...p} type="password" autoComplete="new-password" value={pw.form.next} onChange={pw.set('next')} />}</Field>
           <Field label="Confirm new password" error={pw.errors.confirm}>{(p) => <Input {...p} type="password" autoComplete="new-password" value={pw.form.confirm} onChange={pw.set('confirm')} />}</Field>
+        </div>
+      </SectionCard>
+      <SectionCard title="Getting started" description="A short walkthrough of the system, and step-by-step guides." icon={LifeBuoy}>
+        <div className="flex flex-wrap gap-2">
+          <Button icon={Map} onClick={startMainTour}>Take the tour again</Button>
+          <Button variant="secondary" icon={LifeBuoy} to="/help">Help & guides</Button>
         </div>
       </SectionCard>
     </div>

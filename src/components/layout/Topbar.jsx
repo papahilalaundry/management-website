@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Bell, CalendarDays, ChevronDown, ChevronLeft, LogOut, Plus, Search, Settings, User } from 'lucide-react'
+import { Bell, CalendarDays, ChevronDown, ChevronLeft, LifeBuoy, LogOut, Map, Plus, Search, Settings, User } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
+import { useTour } from '../tour/TourContext'
 import { PAGE_TITLES, parentPath } from '../../routes/navigation'
 import { LogoMark } from './Logo'
 import GlobalSearch from './GlobalSearch'
@@ -34,7 +35,7 @@ function NotificationBell() {
 
   const latest = notifications.slice(0, 6)
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative" data-tour="notifications">
       <button
         type="button"
         onClick={() => {
@@ -128,6 +129,7 @@ function MobileSearch({ onClose }) {
 
 export default function Topbar() {
   const { user, logout, can } = useAuth()
+  const { startMainTour } = useTour()
   const location = useLocation()
   const navigate = useNavigate()
   const [searchOpen, setSearchOpen] = useState(false)
@@ -159,14 +161,14 @@ export default function Topbar() {
           </p>
         </div>
 
-        <GlobalSearch className="mx-auto hidden w-full max-w-md lg:block" />
+        <div data-tour="search" className="mx-auto hidden w-full max-w-md lg:block"><GlobalSearch /></div>
 
         <div className="ml-auto flex items-center gap-0.5 sm:gap-2">
-          <button type="button" onClick={() => setSearchOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 active:bg-slate-100 lg:hidden" aria-label="Search orders and customers">
+          <button type="button" onClick={() => setSearchOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 active:bg-slate-100 lg:hidden" aria-label="Search orders and customers" data-tour="search-mobile">
             <Search size={20} />
           </button>
           {can('orders.create') && (
-            <span className="hidden lg:block">
+            <span className="hidden lg:block" data-tour="new-order">
               <Button to="/orders/new" icon={Plus} size="sm" className="h-9">New Order</Button>
             </span>
           )}
@@ -174,7 +176,7 @@ export default function Topbar() {
           <Dropdown
             width={230}
             trigger={
-              <button type="button" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition hover:bg-slate-100 lg:rounded-lg lg:pr-1.5" aria-label="Account menu">
+              <button type="button" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-1 transition hover:bg-slate-100 lg:rounded-lg lg:pr-1.5" aria-label="Account menu" data-tour="account">
                 <Avatar name={user.name} size="sm" />
                 <span className="hidden text-left leading-tight xl:block">
                   <span className="block text-[13px] font-semibold text-ink">{user.name}</span>
@@ -187,6 +189,9 @@ export default function Topbar() {
               { heading: `Signed in as ${user.username ?? user.name}` },
               { label: 'My profile', icon: User, onClick: () => navigate('/settings?tab=profile') },
               { label: 'Settings', icon: Settings, onClick: () => navigate('/settings') },
+              { divider: true },
+              { label: 'Take the tour', icon: Map, onClick: startMainTour },
+              { label: 'Help & guides', icon: LifeBuoy, onClick: () => navigate('/help') },
               { divider: true },
               { label: 'Log out', icon: LogOut, danger: true, onClick: logout },
             ]}

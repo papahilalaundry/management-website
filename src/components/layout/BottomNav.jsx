@@ -2,12 +2,13 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { ClipboardList, LayoutDashboard, Menu, Plus, Users } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
-function Tab({ to, label, icon: Icon, end, activeMatch }) {
+function Tab({ to, label, icon: Icon, end, activeMatch, tour }) {
   const { pathname } = useLocation()
   return (
     <NavLink
       to={to}
       end={end}
+      data-tour={tour}
       className={({ isActive }) => {
         const active = activeMatch ? activeMatch(pathname) : isActive
         return `group flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10.5px] font-semibold transition-colors ${active ? 'text-brand' : 'text-slate-500 active:text-ink'}`
@@ -44,24 +45,26 @@ export default function BottomNav({ onMore }) {
       className="no-print fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-safe shadow-[0_-4px_16px_-8px_rgb(16_24_40/0.12)] backdrop-blur-md lg:hidden"
     >
       <div className="mx-auto flex max-w-xl items-stretch px-1">
-        <Tab to="/dashboard" label="Home" icon={LayoutDashboard} />
-        <Tab to="/orders" label="Orders" icon={ClipboardList} activeMatch={ordersActive} />
+        <Tab to="/dashboard" label="Home" icon={LayoutDashboard} tour="tab-home" />
+        <Tab to="/orders" label="Orders" icon={ClipboardList} activeMatch={ordersActive} tour="tab-orders" />
         {can('orders.create') && (
           <div className="flex flex-1 justify-center">
             <NavLink
               to="/orders/new"
               aria-label="New order"
+              data-tour="tab-new"
               className="-mt-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-brand to-blue-500 text-white shadow-[0_10px_24px_-6px_rgb(37_99_235/0.6)] ring-4 ring-white transition active:scale-95"
             >
               <Plus size={26} strokeWidth={2.4} aria-hidden />
             </NavLink>
           </div>
         )}
-        <Tab to="/customers" label="Customers" icon={Users} />
+        <Tab to="/customers" label="Customers" icon={Users} tour="tab-customers" />
         <button
           type="button"
           onClick={onMore}
           aria-label="More pages"
+          data-tour="tab-more"
           className={`group flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10.5px] font-semibold ${moreActive ? 'text-brand' : 'text-slate-500 active:text-ink'}`}
         >
           <span className={`flex h-7 w-14 items-center justify-center rounded-full ${moreActive ? 'bg-sky-soft' : 'group-active:bg-slate-100'}`}>

@@ -14,6 +14,7 @@ function NavItem({ item, collapsed, badge, onNavigate }) {
     <NavLink
       to={item.to}
       onClick={onNavigate}
+      data-tour={item.tour ? `nav-${item.tour}` : undefined}
       className={({ isActive }) =>
         `group relative flex items-center gap-3 rounded-lg text-[13.5px] font-semibold transition-colors ${collapsed ? 'h-10 w-10 justify-center' : 'h-10 px-3'} ${
           isActive ? 'bg-white/[0.09] text-white' : 'text-navy-200 hover:bg-white/[0.05] hover:text-white'
@@ -60,7 +61,7 @@ function SidebarContent({ collapsed, onToggle, onNavigate, mobile }) {
         )}
       </div>
 
-      <nav className={`scroll-thin flex-1 overflow-y-auto pb-4 pt-2 ${collapsed ? 'px-[18px]' : 'px-3'}`} aria-label="Main navigation">
+      <nav data-tour="menu" className={`scroll-thin flex-1 overflow-y-auto pb-4 pt-2 ${collapsed ? 'px-[18px]' : 'px-3'}`} aria-label="Main navigation">
         {NAV_SECTIONS.map((section) => {
           const items = section.items.filter((i) => can(i.permission))
           if (!items.length) return null

@@ -9,6 +9,7 @@ import { PageSkeleton } from './components/ui/Skeleton'
 import Login from './pages/Login'
 import NotFound from './pages/NotFound'
 import { useMediaQuery } from './hooks/useMediaQuery'
+import { TourProvider } from './components/tour/TourContext'
 
 // Route-level code splitting keeps the initial bundle small.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -25,6 +26,7 @@ const Staff = lazy(() => import('./pages/Staff'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Notifications = lazy(() => import('./pages/Notifications'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Help = lazy(() => import('./pages/Help'))
 
 const guarded = (permission, element) => (
   <RequirePermission permission={permission}>
@@ -38,6 +40,7 @@ export default function App() {
     <SettingsProvider>
       <AuthProvider>
         <BrowserRouter>
+          <TourProvider>
           <Routes>
             <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
             <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
@@ -57,9 +60,11 @@ export default function App() {
               <Route path="/reports" element={guarded('reports.view', <Reports />)} />
               <Route path="/notifications" element={guarded('notifications.view', <Notifications />)} />
               <Route path="/settings" element={guarded('settings.view', <Settings />)} />
+              <Route path="/help" element={guarded('help.view', <Help />)} />
               <Route path="*" element={<NotFound />} />
             </Route>
           </Routes>
+          </TourProvider>
         </BrowserRouter>
         <Toaster position={phone ? 'top-center' : 'top-right'} richColors closeButton={!phone} mobileOffset={{ top: 'calc(64px + env(safe-area-inset-top))', left: '12px', right: '12px' }} toastOptions={{ className: 'font-sans' }} />
       </AuthProvider>

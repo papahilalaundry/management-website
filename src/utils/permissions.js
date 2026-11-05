@@ -41,6 +41,7 @@ export const PERMISSIONS = {
   'reports.view': MGMT,
 
   'notifications.view': ALL,
+  'help.view': ALL,
 
   'settings.view': ALL,
   'settings.business': ['admin'],

@@ -141,6 +141,15 @@ export const staffService = {
     })
   },
 
+  /** Records that the signed-in user finished or skipped the guided tour. */
+  markTourDone() {
+    return request(async (user) => {
+      const at = nowIso()
+      await withWriter(null, (b) => b.update(docRef('staff', user.id), { tourDoneAt: at, updatedAt: at }))
+      return { tourDoneAt: at }
+    })
+  },
+
   /** Changes the signed-in user's Firebase Auth password. */
   changeOwnPassword({ current, next }) {
     return request(async () => {
